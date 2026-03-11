@@ -1,0 +1,368 @@
+syntax = "proto3";
+
+package user.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "banka-backend/proto/user;userv1";
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+// UserType mirrors the user_type column: 'ADMIN' | 'EMPLOYEE' | 'CLIENT'.
+enum UserType {
+  USER_TYPE_UNSPECIFIED = 0;
+  USER_TYPE_ADMIN       = 1;
+  USER_TYPE_EMPLOYEE    = 2;
+  USER_TYPE_CLIENT      = 3;
+}
+
+// Gender mirrors the gender column in the users table.
+enum Gender {
+  GENDER_UNSPECIFIED = 0;
+  GENDER_MALE        = 1;
+  GENDER_FEMALE      = 2;
+  GENDER_OTHER       = 3;
+}
+
+// ─── Core Domain Messages ─────────────────────────────────────────────────────
+
+// User is the safe public projection of the users table.
+// IMPORTANT: never populate password_hash or salt_password here.
+message User {
+  int64                    id           = 1;
+  string                   email        = 2;
+  string                   first_name   = 3;
+  string                   last_name    = 4;
+  int64                    birth_date   = 5;  // Unix timestamp (ms) — matches DB BIGINT
+  Gender                   gender       = 6;
+  string                   phone_number = 7;
+  string                   address      = 8;
+  UserType                 user_type    = 9;
+  bool                     is_active    = 10;
+  google.protobuf.Timestamp created_at  = 11;
+}
+
+// EmployeeProfile combines User with the employee_details join.
+// Returned on get/list endpoints — no secrets.
+message EmployeeProfile {
+  User            user        = 1;
+  string          username    = 2;
+  string          position    = 3;
+  string          department  = 4;
+  repeated string permissions = 5; // list of permission_code values from user_permissions
+}
+
+// ─── HealthCheck ──────────────────────────────────────────────────────────────
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1; // "SERVING" | "NOT_SERVING"
+}
+
+// ─── GetAllPermissions ────────────────────────────────────────────────────────
+// Admin-only. Returns the full permission codebook so the frontend can
+// populate checkboxes on the Create/Edit Employee forms.
+
+message PermissionEntry {
+  int32  id              = 1; // stable numeric ID
+  string permission_code = 2; // e.g. "MANAGE_USERS"
+}
+
+message GetAllPermissionsRequest {}
+
+message GetAllPermissionsResponse {
+  repeated PermissionEntry permissions = 1;
+}
+
+// ─── GetEmployeeByID ──────────────────────────────────────────────────────────
+// Admin-only (or MANAGE_USERS permission). Returns the full employee profile
+// including permissions, for the edit form.
+// Edge case: returns NOT_FOUND for unknown IDs;
+//            returns PERMISSION_DENIED when the requested user is an ADMIN.
+
+message GetEmployeeByIDRequest {
+  int64 id = 1;
+}
+
+message GetEmployeeByIDResponse {
+  EmployeeProfile employee = 1;
+}
+
+// ─── GetAllEmployees ──────────────────────────────────────────────────────────
+// Admin-only. Lists employees with optional partial-match filters and pagination.
+// The frontend sends "" when a filter is cleared; the handler maps "" → no filter.
+
+message GetAllEmployeesRequest {
+  string email      = 1; // partial match, case-insensitive; "" = no filter
+  string first_name = 2;
+  string last_name  = 3;
+  string position   = 4;
+  int32  page       = 5; // 1-indexed; 0 is treated as 1
+  int32  page_size  = 6; // 0 is treated as 10
+}
+
+message GetAllEmployeesResponse {
+  repeated EmployeeProfile employees = 1;
+}
+
+// ─── CreateEmployee ───────────────────────────────────────────────────────────
+// Admin-only. Creates an employee account WITHOUT a password.
+// The user service will trigger Notification service to send an activation email.
+
+message CreateEmployeeRequest {
+  // Base users fields
+  string email        = 1;
+  string first_name   = 2;
+  string last_name    = 3;
+  int64  birth_date   = 4; // Unix timestamp (ms)
+  Gender gender       = 5;
+  string phone_number = 6;
+  string address      = 7;
+
+  // employee_details fields
+  string username   = 8;
+  string position   = 9;
+  string department = 10;
+
+  // Optional: admin may create the account as inactive.
+  // Defaults to true (is_active DEFAULT TRUE in DB).
+  optional bool is_active = 11;
+
+  // Initial set of permission codes to assign via user_permissions.
+  repeated string permissions = 12;
+}
+
+message CreateEmployeeResponse {
+  int64  id    = 1; // new user id
+  string email = 2; // echoed back for confirmation
+}
+
+// ─── UpdateEmployee ───────────────────────────────────────────────────────────
+// Admin-only (or MANAGE_USERS permission). Updates all mutable fields of an
+// existing employee and replaces their full permission set atomically.
+// Edge cases: NOT_FOUND for unknown IDs; PERMISSION_DENIED when target is ADMIN.
+
+message UpdateEmployeeRequest {
+  int64  id           = 1;  // required
+  string email        = 2;  // required — must not be empty
+  string first_name   = 3;  // required — must not be empty
+  string last_name    = 4;  // required — must not be empty
+  int64  birth_date   = 5;  // Unix timestamp (ms)
+  Gender gender       = 6;
+  string phone_number = 7;
+  string address      = 8;
+  string position     = 9;
+  string department   = 10;
+  bool   is_active    = 11; // reflects the active-toggle on the frontend
+  repeated string permissions = 12; // full replacement of the permission set
+}
+
+message UpdateEmployeeResponse {
+  EmployeeProfile employee = 1; // fresh profile read back after commit
+}
+
+// ─── SetPassword ──────────────────────────────────────────────────────────────
+// Called by the employee after clicking the activation link in their email.
+// The activation token is a JWT signed with JWT_ACTIVATION_SECRET (24 h TTL).
+// Password constraint: minimum 8 characters.
+// No auth header required — the activation token IS the credential.
+
+message SetPasswordRequest {
+  string token    = 1; // JWT activation token from the email link
+  string password = 2; // new password (min 8 chars)
+}
+
+message SetPasswordResponse {
+  string message = 1; // "Password set successfully."
+}
+
+// ─── ActivateAccount ──────────────────────────────────────────────────────────
+// Called by the employee after clicking the activation link in their email.
+// Password constraints (enforced in business logic, documented here):
+//   - min 8 / max 32 characters
+//   - at least 2 digits, 1 uppercase letter, 1 lowercase letter
+
+message ActivateAccountRequest {
+  string token            = 1; // short-lived activation token from the email link
+  string new_password     = 2;
+  string confirm_password = 3;
+}
+
+message ActivateAccountResponse {
+  string message = 1; // e.g. "Account activated successfully."
+}
+
+// ─── Login ────────────────────────────────────────────────────────────────────
+// Returns both an access token and a refresh token on success.
+// Access token payload: { sub, email, user_type, permissions[], iat, exp }
+// Refresh token payload: { sub, iat, exp, token_type: "refresh" }
+// Fails with UNAUTHENTICATED if credentials are wrong or account is inactive.
+
+message LoginRequest {
+  string email    = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string access_token  = 1;
+  string refresh_token = 2;
+  string token_type    = 3; // always "Bearer"
+  int64  expires_in    = 4; // access token lifetime in seconds
+}
+
+// ─── RefreshToken ─────────────────────────────────────────────────────────────
+// Exchanges a valid refresh token for a new access token.
+// The original refresh token is returned unchanged — no rolling refresh.
+// Fails with UNAUTHENTICATED if the refresh token is invalid or expired.
+// Fails with PERMISSION_DENIED if the account has been deactivated since issue.
+
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+message RefreshTokenResponse {
+  string access_token  = 1;
+  string refresh_token = 2; // echoed back unchanged
+  string token_type    = 3; // always "Bearer"
+  int64  expires_in    = 4; // new access token lifetime in seconds
+}
+
+// ─── ForgotPassword ───────────────────────────────────────────────────────────
+// Triggers an email with a password-reset link.
+// Always returns success to avoid user-enumeration (do not reveal whether the
+// email exists in the system).
+
+message ForgotPasswordRequest {
+  string email = 1;
+}
+
+message ForgotPasswordResponse {
+  string message = 1; // "If your email is registered in our system, you will receive a password reset link."
+}
+
+// ─── ResetPassword ────────────────────────────────────────────────────────────
+// Consumes a password-reset JWT and writes the new password.
+// The token is signed with JWT_ACTIVATION_SECRET and expires in 15 minutes.
+// No Authorization header required — the reset token IS the credential.
+
+message ResetPasswordRequest {
+  string token        = 1; // JWT reset token from the email link
+  string new_password = 2; // new password (min 8 chars)
+}
+
+message ResetPasswordResponse {
+  string message = 1; // "Password reset successfully."
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────────
+
+service UserService {
+
+  // HealthCheck — used by notification-service and Kubernetes liveness probes.
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {
+    option (google.api.http) = {
+      get: "/health"
+    };
+  }
+
+  // GetAllPermissions — Admin only.
+  // Returns the full permission codebook for the Create/Edit Employee forms.
+  rpc GetAllPermissions(GetAllPermissionsRequest) returns (GetAllPermissionsResponse) {
+    option (google.api.http) = {
+      get: "/permissions"
+    };
+  }
+
+  // GetEmployeeByID — Admin or MANAGE_USERS permission.
+  // Returns the full employee profile + permissions for the edit form.
+  rpc GetEmployeeByID(GetEmployeeByIDRequest) returns (GetEmployeeByIDResponse) {
+    option (google.api.http) = {
+      get: "/employee/{id}"
+    };
+  }
+
+  // GetAllEmployees — Admin only.
+  // Lists employees with optional partial-match filters and pagination.
+  rpc GetAllEmployees(GetAllEmployeesRequest) returns (GetAllEmployeesResponse) {
+    option (google.api.http) = {
+      get: "/employee"
+    };
+  }
+
+  // CreateEmployee — Admin only.
+  // Creates a new employee account (no password). An activation email is sent
+  // automatically via the Notification service.
+  rpc CreateEmployee(CreateEmployeeRequest) returns (CreateEmployeeResponse) {
+    option (google.api.http) = {
+      post: "/employee"
+      body: "*"
+    };
+  }
+
+  // UpdateEmployee — Admin or MANAGE_USERS permission.
+  // Replaces all mutable employee fields and their full permission set atomically.
+  rpc UpdateEmployee(UpdateEmployeeRequest) returns (UpdateEmployeeResponse) {
+    option (google.api.http) = {
+      put: "/employee/{id}"
+      body: "*"
+    };
+  }
+
+  // SetPassword — Called by the employee from the activation email link.
+  // Verifies the activation JWT and writes the hashed password.
+  // Public: no Authorization header required.
+  rpc SetPassword(SetPasswordRequest) returns (SetPasswordResponse) {
+    option (google.api.http) = {
+      post: "/auth/set-password"
+      body: "*"
+    };
+  }
+
+  // ActivateAccount — Called by the employee from the activation email link.
+  // Sets the password and marks the account ready for login.
+  rpc ActivateAccount(ActivateAccountRequest) returns (ActivateAccountResponse) {
+    option (google.api.http) = {
+      post: "/activate"
+      body: "*"
+    };
+  }
+
+  // Login — Authenticates with email + password.
+  // Returns JWT access and refresh tokens.
+  // gRPC error codes: UNAUTHENTICATED (wrong creds / inactive), NOT_FOUND (no such email).
+  rpc Login(LoginRequest) returns (LoginResponse) {
+    option (google.api.http) = {
+      post: "/login"
+      body: "*"
+    };
+  }
+
+  // RefreshToken — Exchanges a valid refresh token for a new access token.
+  // The original refresh token is returned unchanged (no rolling sessions).
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse) {
+    option (google.api.http) = {
+      post: "/refresh-token"
+      body: "*"
+    };
+  }
+
+  // ForgotPassword — Sends a reset link to the given email address.
+  // Always responds successfully to prevent user enumeration.
+  rpc ForgotPassword(ForgotPasswordRequest) returns (ForgotPasswordResponse) {
+    option (google.api.http) = {
+      post: "/auth/forgot-password"
+      body: "*"
+    };
+  }
+
+  // ResetPassword — Consumes a reset JWT and writes the new hashed password.
+  // Public: no Authorization header required.
+  rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse) {
+    option (google.api.http) = {
+      post: "/auth/reset-password"
+      body: "*"
+    };
+  }
+}

@@ -1,0 +1,884 @@
+// Package handler — gRPC delivery layer.
+// Implements pb.UserServiceServer generated from proto/user/user.proto.
+//
+// Prerequisites before this package compiles:
+//   - Run `make proto`        → generates banka-backend/proto/user (pb package)
+//   - Run `sqlc generate`     → generates banka-backend/services/user-service/internal/database/sqlc
+package handler
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"log"
+	"strconv"
+	"strings"
+
+	pb "banka-backend/proto/user"
+	db "banka-backend/services/user-service/internal/database/sqlc"
+	"banka-backend/services/user-service/internal/interceptor"
+	"banka-backend/services/user-service/internal/utils"
+
+	"github.com/jackc/pgx/v5/pgconn"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+// UserHandler implements pb.UserServiceServer.
+// Embedding UnimplementedUserServiceServer satisfies the interface for any RPC
+// methods not yet overridden and provides forward-compatibility when new RPCs
+// are added to the proto.
+type UserHandler struct {
+	pb.UnimplementedUserServiceServer
+	querier          db.Querier // injected sqlc query layer (non-transactional reads)
+	sqlDB            *sql.DB    // raw connection pool — used only to open transactions
+	accessSecret     string     // HMAC secret for signing access tokens
+	refreshSecret    string     // HMAC secret for signing refresh tokens
+	activationSecret string     // HMAC secret for signing activation/reset tokens
+	rabbitMQURL      string     // AMQP connection URL for the email-notification queue
+}
+
+// NewUserHandler constructs a UserHandler.
+// sqlDB is required for handlers that need multi-statement transactions.
+func NewUserHandler(q db.Querier, sqlDB *sql.DB, accessSecret, refreshSecret, activationSecret, rabbitMQURL string) *UserHandler {
+	return &UserHandler{
+		querier:          q,
+		sqlDB:            sqlDB,
+		accessSecret:     accessSecret,
+		refreshSecret:    refreshSecret,
+		activationSecret: activationSecret,
+		rabbitMQURL:      rabbitMQURL,
+	}
+}
+
+// ─── Health ───────────────────────────────────────────────────────────────────
+
+// HealthCheck responds to both liveness probes and the gRPC-Gateway GET /health
+// route defined in the proto HTTP annotation.
+func (h *UserHandler) HealthCheck(_ context.Context, _ *pb.HealthCheckRequest) (*pb.HealthCheckResponse, error) {
+	return &pb.HealthCheckResponse{Status: "SERVING"}, nil
+}
+
+// ─── Employee management (Admin only) ────────────────────────────────────────
+
+// CreateEmployee creates a new employee account without a password.
+//
+// Flow (all steps run inside a single DB transaction):
+//  1. ADMIN-only guard via JWT claims.
+//  2. Validate mandatory fields (email, first_name, last_name).
+//  3. INSERT into users — password_hash/salt_password left empty for activation.
+//  4. INSERT into employee_details — username derived from first.last if omitted.
+//  5. Loop through requested permissions and INSERT into user_permissions.
+//  6. COMMIT; return the new user ID + email.
+//
+// NOTE: notification/activation-email trigger is deferred to a later phase.
+// Mapped to: POST /employee
+func (h *UserHandler) CreateEmployee(ctx context.Context, req *pb.CreateEmployeeRequest) (*pb.CreateEmployeeResponse, error) {
+	// ── 1. Authorization — ADMIN only ─────────────────────────────────────────
+	claims, ok := interceptor.ClaimsFromContext(ctx)
+	if !ok || claims.UserType != "ADMIN" {
+		return nil, status.Errorf(codes.PermissionDenied, "only administrators can create employees")
+	}
+
+	// ── 2. Mandatory field validation ─────────────────────────────────────────
+	switch {
+	case strings.TrimSpace(req.Email) == "":
+		return nil, status.Errorf(codes.InvalidArgument, "email is required")
+	case strings.TrimSpace(req.FirstName) == "":
+		return nil, status.Errorf(codes.InvalidArgument, "first_name is required")
+	case strings.TrimSpace(req.LastName) == "":
+		return nil, status.Errorf(codes.InvalidArgument, "last_name is required")
+	}
+
+	// ── 3. Open transaction ───────────────────────────────────────────────────
+	tx, err := h.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to begin transaction")
+	}
+	// Rollback is a no-op once Commit succeeds.
+	defer tx.Rollback() //nolint:errcheck
+
+	qtx := db.New(tx) // transaction-bound query layer
+
+	// ── 4. is_active default ──────────────────────────────────────────────────
+	isActive := true
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
+	// ── 5. INSERT users ───────────────────────────────────────────────────────
+	newUser, err := qtx.CreateUser(ctx, db.CreateUserParams{
+		Email:        strings.TrimSpace(req.Email),
+		PasswordHash: "", // set during account activation (Issue 11)
+		SaltPassword: "", // set during account activation (Issue 11)
+		UserType:     "EMPLOYEE",
+		FirstName:    strings.TrimSpace(req.FirstName),
+		LastName:     strings.TrimSpace(req.LastName),
+		BirthDate:    req.BirthDate,
+		Gender:       nullStrIf(genderToString(req.Gender), req.Gender != pb.Gender_GENDER_UNSPECIFIED),
+		PhoneNumber:  nullStrIf(req.PhoneNumber, req.PhoneNumber != ""),
+		Address:      nullStrIf(req.Address, req.Address != ""),
+		IsActive:     isActive,
+	})
+	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, status.Errorf(codes.AlreadyExists, "email already registered: %s", req.Email)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to create user")
+	}
+
+	// ── 6. INSERT employee_details ────────────────────────────────────────────
+	// Username falls back to "firstname.lastname" (lowercase) when not supplied.
+	username := strings.TrimSpace(req.Username)
+	if username == "" {
+		username = strings.ToLower(req.FirstName + "." + req.LastName)
+	}
+
+	err = qtx.CreateEmployeeDetails(ctx, db.CreateEmployeeDetailsParams{
+		UserID:     newUser.ID,
+		Username:   username,
+		Position:   nullStrIf(req.Position, req.Position != ""),
+		Department: nullStrIf(req.Department, req.Department != ""),
+	})
+	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, status.Errorf(codes.AlreadyExists, "username already taken: %s", username)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to create employee details")
+	}
+
+	// ── 7. Assign permissions ─────────────────────────────────────────────────
+	for _, code := range req.Permissions {
+		if strings.TrimSpace(code) == "" {
+			continue
+		}
+		if err := qtx.AssignUserPermission(ctx, db.AssignUserPermissionParams{
+			UserID:         newUser.ID,
+			PermissionCode: code,
+		}); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to assign permission %q", code)
+		}
+	}
+
+	// ── 8. Commit ─────────────────────────────────────────────────────────────
+	if err := tx.Commit(); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to commit transaction")
+	}
+
+	// ── 9. Publish activation event ───────────────────────────────────────────
+	// The user is already committed; any messaging failure must NOT roll back
+	// the DB or return an error to the caller — the frontend would have no way
+	// to reconcile a committed row against a gRPC error response.
+	token, err := utils.GenerateActivationToken(req.Email, h.activationSecret)
+	if err != nil {
+		log.Printf("[create-employee] failed to generate activation token for %s: %v", req.Email, err)
+	} else if err := utils.PublishEmailEvent(h.rabbitMQURL, utils.EmailEvent{
+		Type:  "ACTIVATION",
+		Email: req.Email,
+		Token: token,
+	}); err != nil {
+		log.Printf("[create-employee] failed to publish activation event for %s: %v", req.Email, err)
+	}
+
+	return &pb.CreateEmployeeResponse{
+		Id:    newUser.ID,
+		Email: newUser.Email,
+	}, nil
+}
+
+// ─── Employee update (Issue 8) ────────────────────────────────────────────────
+
+// UpdateEmployee replaces all mutable fields of an existing employee and
+// atomically swaps their full permission set.
+//
+// Authorization: caller must be ADMIN or hold MANAGE_USERS permission.
+//
+// Flow:
+//  1. Auth guard.
+//  2. Validate mandatory fields (id, email, first_name, last_name).
+//  3. Pre-fetch target user — NOT_FOUND if missing; PERMISSION_DENIED if ADMIN.
+//  4. Begin transaction.
+//  5. UpdateUser — all mutable base columns including is_active.
+//  6. UpdateEmployeeDetails — position, department.
+//  7. DeleteUserPermissions — wipe old set.
+//  8. AssignUserPermission — re-assign each code in req.Permissions.
+//  9. Commit; read back fresh profile and return.
+//
+// Mapped to: PUT /employee/{id}
+func (h *UserHandler) UpdateEmployee(ctx context.Context, req *pb.UpdateEmployeeRequest) (*pb.UpdateEmployeeResponse, error) {
+	// ── 1. Authorization ──────────────────────────────────────────────────────
+	claims, ok := interceptor.ClaimsFromContext(ctx)
+	if !ok {
+		return nil, status.Errorf(codes.PermissionDenied, "missing authentication claims")
+	}
+	isAdmin := claims.UserType == "ADMIN"
+	hasManageUsers := false
+	for _, p := range claims.Permissions {
+		if p == "MANAGE_USERS" {
+			hasManageUsers = true
+			break
+		}
+	}
+	if !isAdmin && !hasManageUsers {
+		return nil, status.Errorf(codes.PermissionDenied, "only admins or users with MANAGE_USERS permission can update employees")
+	}
+
+	// ── 2. Mandatory field validation ─────────────────────────────────────────
+	switch {
+	case req.Id == 0:
+		return nil, status.Errorf(codes.InvalidArgument, "id is required")
+	case strings.TrimSpace(req.Email) == "":
+		return nil, status.Errorf(codes.InvalidArgument, "email is required")
+	case strings.TrimSpace(req.FirstName) == "":
+		return nil, status.Errorf(codes.InvalidArgument, "first_name is required")
+	case strings.TrimSpace(req.LastName) == "":
+		return nil, status.Errorf(codes.InvalidArgument, "last_name is required")
+	}
+
+	// ── 3. Pre-fetch target (not found + admin guard) ─────────────────────────
+	existing, err := h.querier.GetEmployeeByID(ctx, req.Id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, status.Errorf(codes.NotFound, "employee not found")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to fetch employee")
+	}
+	if existing.UserType == "ADMIN" {
+		return nil, status.Errorf(codes.PermissionDenied, "admin accounts cannot be edited")
+	}
+
+	// ── 4. Begin transaction ──────────────────────────────────────────────────
+	tx, err := h.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to begin transaction")
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	qtx := db.New(tx)
+
+	// ── 5. UpdateUser ─────────────────────────────────────────────────────────
+	if err := qtx.UpdateUser(ctx, db.UpdateUserParams{
+		ID:          req.Id,
+		Email:       strings.TrimSpace(req.Email),
+		FirstName:   strings.TrimSpace(req.FirstName),
+		LastName:    strings.TrimSpace(req.LastName),
+		BirthDate:   req.BirthDate,
+		Gender:      nullStrIf(genderToString(req.Gender), req.Gender != pb.Gender_GENDER_UNSPECIFIED),
+		PhoneNumber: nullStrIf(req.PhoneNumber, req.PhoneNumber != ""),
+		Address:     nullStrIf(req.Address, req.Address != ""),
+		IsActive:    req.IsActive,
+	}); err != nil {
+		if isUniqueViolation(err) {
+			return nil, status.Errorf(codes.AlreadyExists, "email already in use: %s", req.Email)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to update user")
+	}
+
+	// ── 6. UpdateEmployeeDetails ──────────────────────────────────────────────
+	if err := qtx.UpdateEmployeeDetails(ctx, db.UpdateEmployeeDetailsParams{
+		UserID:     req.Id,
+		Position:   nullStrIf(req.Position, req.Position != ""),
+		Department: nullStrIf(req.Department, req.Department != ""),
+	}); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to update employee details")
+	}
+
+	// ── 7. DeleteUserPermissions ──────────────────────────────────────────────
+	if err := qtx.DeleteUserPermissions(ctx, req.Id); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to clear permissions")
+	}
+
+	// ── 8. Re-assign permissions ──────────────────────────────────────────────
+	for _, code := range req.Permissions {
+		if strings.TrimSpace(code) == "" {
+			continue
+		}
+		if err := qtx.AssignUserPermission(ctx, db.AssignUserPermissionParams{
+			UserID:         req.Id,
+			PermissionCode: code,
+		}); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to assign permission %q", code)
+		}
+	}
+
+	// ── 9. Commit ─────────────────────────────────────────────────────────────
+	if err := tx.Commit(); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to commit transaction")
+	}
+
+	// Read back fresh profile to include the updated permission set.
+	updated, err := h.querier.GetEmployeeByID(ctx, req.Id)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read updated employee")
+	}
+	perms, err := h.querier.GetUserPermissions(ctx, req.Id)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read updated permissions")
+	}
+
+	return &pb.UpdateEmployeeResponse{
+		Employee: &pb.EmployeeProfile{
+			User: &pb.User{
+				Id:          updated.ID,
+				Email:       updated.Email,
+				FirstName:   updated.FirstName,
+				LastName:    updated.LastName,
+				BirthDate:   updated.BirthDate,
+				Gender:      genderFromString(updated.Gender),
+				PhoneNumber: fromNullStr(updated.PhoneNumber),
+				Address:     fromNullStr(updated.Address),
+				UserType:    userTypeFromString(updated.UserType),
+				IsActive:    updated.IsActive,
+				CreatedAt:   timestamppb.New(updated.CreatedAt),
+			},
+			Username:    updated.Username,
+			Position:    fromNullStr(updated.Position),
+			Department:  fromNullStr(updated.Department),
+			Permissions: perms,
+		},
+	}, nil
+}
+
+// ─── Account activation / set password (Issue 11) ────────────────────────────
+
+// SetPassword lets an employee set their initial password by presenting the
+// activation JWT they received by e-mail.
+//
+// Flow (no auth header required — the activation token IS the credential):
+//  1. Validate password length (min 8 characters).
+//  2. Verify the activation JWT — Unauthenticated if invalid or expired.
+//  3. Fetch the user by email — NotFound if the account no longer exists.
+//  4. Replay-attack guard: if password_hash is already set the token has been
+//     consumed; return FailedPrecondition so the link cannot be reused.
+//  5. Hash the new password with bcrypt.
+//  6. Persist the password_hash.
+//
+// Mapped to: POST /auth/set-password
+func (h *UserHandler) SetPassword(ctx context.Context, req *pb.SetPasswordRequest) (*pb.SetPasswordResponse, error) {
+	// ── 1. Password validation ────────────────────────────────────────────────
+	if len(req.Password) < 8 {
+		return nil, status.Errorf(codes.InvalidArgument, "password must be at least 8 characters")
+	}
+
+	// ── 2. Verify activation token ────────────────────────────────────────────
+	email, err := utils.VerifyActivationToken(req.Token, h.activationSecret)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "invalid or expired activation token")
+	}
+
+	// ── 3. Fetch user ─────────────────────────────────────────────────────────
+	user, err := h.querier.GetUserByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, status.Errorf(codes.NotFound, "user not found")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to fetch user")
+	}
+
+	// ── 4. Replay-attack guard ────────────────────────────────────────────────
+	// A non-empty password_hash means the account was already activated.
+	// The activation token must be treated as single-use: once the password
+	// is set any further use of the same token (valid for 24 h) is rejected.
+	if user.PasswordHash != "" {
+		return nil, status.Errorf(codes.FailedPrecondition, "account is already activated and password is set; token is no longer valid")
+	}
+
+	// ── 5. Hash password ──────────────────────────────────────────────────────
+	hashed, err := utils.HashPassword(req.Password)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to hash password")
+	}
+
+	// ── 6. Persist ────────────────────────────────────────────────────────────
+	if err := h.querier.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{
+		PasswordHash: hashed,
+		Email:        email,
+	}); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to update password")
+	}
+
+	return &pb.SetPasswordResponse{Message: "Password set successfully."}, nil
+}
+
+// ActivateAccount lets an employee set their password via the activation token
+// received by e-mail.
+// Mapped to: POST /activate
+func (h *UserHandler) ActivateAccount(_ context.Context, _ *pb.ActivateAccountRequest) (*pb.ActivateAccountResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "not implemented yet")
+}
+
+// ─── Authentication ───────────────────────────────────────────────────────────
+
+// Login validates email + password and returns a JWT access/refresh token pair.
+//
+// Flow:
+//  1. Fetch user row by email — NOT_FOUND if email is unknown.
+//  2. Reject inactive accounts — PERMISSION_DENIED.
+//  3. Verify bcrypt password hash — UNAUTHENTICATED on mismatch.
+//  4. Fetch the user's permission codes from user_permissions.
+//  5. Issue access token (15 min) and refresh token (7 days).
+//
+// Mapped to: POST /login
+func (h *UserHandler) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
+	// ── 1. Lookup ─────────────────────────────────────────────────────────────
+	user, err := h.querier.GetUserByEmail(ctx, req.Email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Printf("[login] user not found for email=%q", req.Email)
+			return nil, status.Errorf(codes.NotFound, "no account found for that email")
+		}
+		log.Printf("[login] DB error fetching user: %v", err)
+		return nil, status.Errorf(codes.Internal, "database error during login")
+	}
+
+	// ── 2. Active check ───────────────────────────────────────────────────────
+	if !user.IsActive {
+		log.Printf("[login] account inactive: user_id=%d email=%q", user.ID, user.Email)
+		return nil, status.Errorf(codes.PermissionDenied, "account is inactive")
+	}
+
+	// ── 3. Password verification ──────────────────────────────────────────────
+	// Comparing req.Password against user.PasswordHash only — SaltPassword is
+	// NOT appended because bcrypt embeds its own salt inside the hash itself.
+	if err := utils.CheckPassword(req.Password, user.PasswordHash); err != nil {
+		log.Printf("[login] bcrypt mismatch: user_id=%d hash_len=%d err=%v",
+			user.ID, len(user.PasswordHash), err)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid credentials")
+	}
+
+	// ── 4. Permissions ────────────────────────────────────────────────────────
+	perms, err := h.querier.GetUserPermissions(ctx, user.ID)
+	if err != nil {
+		log.Printf("[login] failed to load permissions: user_id=%d err=%v", user.ID, err)
+		return nil, status.Errorf(codes.Internal, "failed to load permissions")
+	}
+
+	// ── 5. Token generation ───────────────────────────────────────────────────
+	// Access token:  { sub, email, user_type, permissions[], iat, exp }
+	// Refresh token: { sub, iat, exp, token_type: "refresh" }
+	userIDStr := strconv.FormatInt(user.ID, 10)
+	accessToken, refreshToken, err := utils.GenerateTokens(
+		userIDStr,
+		user.Email,
+		user.UserType,
+		perms,
+		h.accessSecret,
+		h.refreshSecret,
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to generate tokens")
+	}
+
+	return &pb.LoginResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    900, // 15 minutes in seconds
+	}, nil
+}
+
+// ─── Token refresh ────────────────────────────────────────────────────────────
+
+// RefreshToken validates a refresh token and issues a new access token.
+// The original refresh token is returned unchanged — no rolling sessions.
+//
+// Flow:
+//  1. Verify the refresh token signature + expiry; reject if it carries token_type != "refresh".
+//  2. Extract user ID from the sub claim and look the user up — NOT_FOUND if gone.
+//  3. Reject inactive accounts — PERMISSION_DENIED.
+//  4. Fetch fresh permissions so the new access token reflects any RBAC changes.
+//  5. Sign a new access token (15 min); echo the original refresh token back.
+//
+// Mapped to: POST /refresh-token
+func (h *UserHandler) RefreshToken(ctx context.Context, req *pb.RefreshTokenRequest) (*pb.RefreshTokenResponse, error) {
+	// ── 1. Verify refresh token ───────────────────────────────────────────────
+	refreshClaims, err := utils.VerifyRefreshToken(req.RefreshToken, h.refreshSecret)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "invalid refresh token: %v", err)
+	}
+
+	// ── 2. User freshness check ───────────────────────────────────────────────
+	userIDInt, err := strconv.ParseInt(refreshClaims.Subject, 10, 64)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "malformed subject claim")
+	}
+
+	user, err := h.querier.GetUserByID(ctx, userIDInt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, status.Errorf(codes.NotFound, "user no longer exists")
+		}
+		return nil, status.Errorf(codes.Internal, "database error during token refresh")
+	}
+
+	// ── 3. Active check ───────────────────────────────────────────────────────
+	if !user.IsActive {
+		return nil, status.Errorf(codes.PermissionDenied, "account is inactive")
+	}
+
+	// ── 4. Fresh permissions ──────────────────────────────────────────────────
+	perms, err := h.querier.GetUserPermissions(ctx, user.ID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to load permissions")
+	}
+
+	// ── 5. Issue new access token only ────────────────────────────────────────
+	userIDStr := strconv.FormatInt(user.ID, 10)
+	accessToken, err := utils.GenerateAccessToken(
+		userIDStr,
+		user.Email,
+		user.UserType,
+		perms,
+		h.accessSecret,
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to generate access token")
+	}
+
+	return &pb.RefreshTokenResponse{
+		AccessToken:  accessToken,
+		RefreshToken: req.RefreshToken, // original token, unchanged
+		TokenType:    "Bearer",
+		ExpiresIn:    900, // 15 minutes
+	}, nil
+}
+
+// ─── Permission codebook (Issue 5) ───────────────────────────────────────────
+
+// GetAllPermissions returns every row from the permissions table so the admin
+// frontend can populate Create/Edit Employee permission checkboxes.
+//
+// Authorization: ADMIN only.
+// Mapped to: GET /permissions
+func (h *UserHandler) GetAllPermissions(ctx context.Context, _ *pb.GetAllPermissionsRequest) (*pb.GetAllPermissionsResponse, error) {
+	// ── 1. Authorization — ADMIN only ─────────────────────────────────────────
+	claims, ok := interceptor.ClaimsFromContext(ctx)
+	if !ok || claims.UserType != "ADMIN" {
+		return nil, status.Errorf(codes.PermissionDenied, "only administrators can list permissions")
+	}
+
+	// ── 2. Query ──────────────────────────────────────────────────────────────
+	rows, err := h.querier.GetAllPermissions(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to fetch permissions")
+	}
+
+	// ── 3. Map & return ───────────────────────────────────────────────────────
+	entries := make([]*pb.PermissionEntry, 0, len(rows))
+	for _, r := range rows {
+		entries = append(entries, &pb.PermissionEntry{
+			Id:             int32(r.ID),
+			PermissionCode: r.PermissionCode,
+		})
+	}
+
+	return &pb.GetAllPermissionsResponse{Permissions: entries}, nil
+}
+
+// ─── Employee listing (Issue 6) ───────────────────────────────────────────────
+
+// GetAllEmployees lists employees with optional partial-match filters and pagination.
+//
+// Flow:
+//  1. Verify caller is ADMIN via JWT claims — PERMISSION_DENIED otherwise.
+//  2. Normalise pagination defaults (page=1, size=10 when zero).
+//  3. Map empty-string filters to sql.NullString{Valid:false} so the SQL
+//     `IS NULL` branch fires and returns all employees (critical frontend edge case).
+//  4. Query, map rows to EmployeeProfile, return.
+//
+// Mapped to: GET /employee
+func (h *UserHandler) GetAllEmployees(ctx context.Context, req *pb.GetAllEmployeesRequest) (*pb.GetAllEmployeesResponse, error) {
+	// ── 1. Authorization — ADMIN only ─────────────────────────────────────────
+	claims, ok := interceptor.ClaimsFromContext(ctx)
+	if !ok || claims.UserType != "ADMIN" {
+		return nil, status.Errorf(codes.PermissionDenied, "only admins can list employees")
+	}
+
+	// ── 2. Pagination defaults ────────────────────────────────────────────────
+	page := req.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := req.PageSize
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	offset := (page - 1) * pageSize
+
+	// ── 3. Optional filter mapping ────────────────────────────────────────────
+	// The frontend sends "" when a filter is cleared. An empty string must map
+	// to sql.NullString{Valid:false} so the SQL `IS NULL` branch fires and the
+	// filter is skipped entirely — returning all employees for that field.
+	params := db.ListEmployeesParams{
+		Limit:  pageSize,
+		Offset: offset,
+	}
+	if req.Email != "" {
+		params.Email = sql.NullString{String: req.Email, Valid: true}
+	}
+	if req.FirstName != "" {
+		params.FirstName = sql.NullString{String: req.FirstName, Valid: true}
+	}
+	if req.LastName != "" {
+		params.LastName = sql.NullString{String: req.LastName, Valid: true}
+	}
+	if req.Position != "" {
+		params.Position = sql.NullString{String: req.Position, Valid: true}
+	}
+
+	// ── 4. Query & map ────────────────────────────────────────────────────────
+	rows, err := h.querier.ListEmployees(ctx, params)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list employees")
+	}
+
+	employees := make([]*pb.EmployeeProfile, 0, len(rows))
+	for _, row := range rows {
+		employees = append(employees, &pb.EmployeeProfile{
+			User: &pb.User{
+				Id:          row.ID,
+				Email:       row.Email,
+				FirstName:   row.FirstName,
+				LastName:    row.LastName,
+				UserType:    userTypeFromString(row.UserType),
+				IsActive:    row.IsActive,
+				PhoneNumber: fromNullStr(row.PhoneNumber),
+			},
+			Position:   fromNullStr(row.Position),
+			Department: fromNullStr(row.Department),
+		})
+	}
+
+	return &pb.GetAllEmployeesResponse{Employees: employees}, nil
+}
+
+// ─── Employee detail (Issue 7) ────────────────────────────────────────────────
+
+// GetEmployeeByID returns the full employee profile + permissions for the edit form.
+//
+// Authorization: caller must be ADMIN or hold the MANAGE_USERS permission.
+//
+// Flow:
+//  1. Auth guard — PERMISSION_DENIED if caller is neither ADMIN nor MANAGE_USERS.
+//  2. Fetch users JOIN employee_details — NOT_FOUND if no matching row.
+//  3. Block ADMIN-type users from being returned through this endpoint (Issue 7 edge case).
+//  4. Fetch permissions — empty slice is valid (new employee with no permissions yet).
+//  5. Map to EmployeeProfile and return.
+//
+// Mapped to: GET /employee/{id}
+func (h *UserHandler) GetEmployeeByID(ctx context.Context, req *pb.GetEmployeeByIDRequest) (*pb.GetEmployeeByIDResponse, error) {
+	// ── 1. Authorization ──────────────────────────────────────────────────────
+	claims, ok := interceptor.ClaimsFromContext(ctx)
+	if !ok {
+		return nil, status.Errorf(codes.PermissionDenied, "missing authentication claims")
+	}
+	isAdmin := claims.UserType == "ADMIN"
+	hasManageUsers := false
+	for _, p := range claims.Permissions {
+		if p == "MANAGE_USERS" {
+			hasManageUsers = true
+			break
+		}
+	}
+	if !isAdmin && !hasManageUsers {
+		return nil, status.Errorf(codes.PermissionDenied, "only admins or users with MANAGE_USERS permission can fetch employee details")
+	}
+
+	// ── 2. Fetch employee row ─────────────────────────────────────────────────
+	row, err := h.querier.GetEmployeeByID(ctx, req.Id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, status.Errorf(codes.NotFound, "employee %d not found", req.Id)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to fetch employee")
+	}
+
+	// ── 3. Block ADMIN-type targets (Issue 7 edge case) ───────────────────────
+	// Admin accounts are managed outside this employee-edit flow.
+	if row.UserType == "ADMIN" {
+		return nil, status.Errorf(codes.PermissionDenied, "admin accounts cannot be edited through this endpoint")
+	}
+
+	// ── 4. Fetch permissions ──────────────────────────────────────────────────
+	perms, err := h.querier.GetUserPermissions(ctx, row.ID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to fetch permissions")
+	}
+
+	// ── 5. Map and return ─────────────────────────────────────────────────────
+	return &pb.GetEmployeeByIDResponse{
+		Employee: &pb.EmployeeProfile{
+			User: &pb.User{
+				Id:          row.ID,
+				Email:       row.Email,
+				FirstName:   row.FirstName,
+				LastName:    row.LastName,
+				BirthDate:   row.BirthDate,
+				Gender:      genderFromString(row.Gender),
+				PhoneNumber: fromNullStr(row.PhoneNumber),
+				Address:     fromNullStr(row.Address),
+				UserType:    userTypeFromString(row.UserType),
+				IsActive:    row.IsActive,
+				CreatedAt:   timestamppb.New(row.CreatedAt),
+			},
+			Username:    row.Username,
+			Position:    fromNullStr(row.Position),
+			Department:  fromNullStr(row.Department),
+			Permissions: perms,
+		},
+	}, nil
+}
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+// isUniqueViolation reports whether err is a PostgreSQL unique-constraint
+// violation (SQLSTATE 23505). Works with pgx/v5/stdlib errors.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+// nullStrIf returns a valid sql.NullString when cond is true, NULL otherwise.
+// Used to map optional proto string fields to nullable DB columns.
+func nullStrIf(s string, cond bool) sql.NullString {
+	return sql.NullString{String: s, Valid: cond}
+}
+
+// fromNullStr extracts the string value from a sql.NullString, returning "" when NULL.
+func fromNullStr(ns sql.NullString) string {
+	if ns.Valid {
+		return ns.String
+	}
+	return ""
+}
+
+// genderFromString converts the nullable DB gender column to the proto Gender enum.
+func genderFromString(ns sql.NullString) pb.Gender {
+	if !ns.Valid {
+		return pb.Gender_GENDER_UNSPECIFIED
+	}
+	switch ns.String {
+	case "MALE":
+		return pb.Gender_GENDER_MALE
+	case "FEMALE":
+		return pb.Gender_GENDER_FEMALE
+	case "OTHER":
+		return pb.Gender_GENDER_OTHER
+	default:
+		return pb.Gender_GENDER_UNSPECIFIED
+	}
+}
+
+// genderToString converts the proto Gender enum to the DB VARCHAR value.
+func genderToString(g pb.Gender) string {
+	switch g {
+	case pb.Gender_GENDER_MALE:
+		return "MALE"
+	case pb.Gender_GENDER_FEMALE:
+		return "FEMALE"
+	case pb.Gender_GENDER_OTHER:
+		return "OTHER"
+	default:
+		return ""
+	}
+}
+
+// userTypeFromString maps the DB user_type string to the proto enum.
+func userTypeFromString(s string) pb.UserType {
+	switch s {
+	case "ADMIN":
+		return pb.UserType_USER_TYPE_ADMIN
+	case "EMPLOYEE":
+		return pb.UserType_USER_TYPE_EMPLOYEE
+	case "CLIENT":
+		return pb.UserType_USER_TYPE_CLIENT
+	default:
+		return pb.UserType_USER_TYPE_UNSPECIFIED
+	}
+}
+
+// ─── Forgot / Reset password (Issue 12) ──────────────────────────────────────
+
+// ForgotPassword triggers a mock password-reset notification.
+//
+// Security: ALWAYS returns the same success message regardless of whether the
+// email exists — this prevents user-enumeration attacks. The token is only
+// generated and logged when the account exists AND is active.
+//
+// Mapped to: POST /auth/forgot-password
+func (h *UserHandler) ForgotPassword(ctx context.Context, req *pb.ForgotPasswordRequest) (*pb.ForgotPasswordResponse, error) {
+	const safeReply = "If your email is registered in our system, you will receive a password reset link."
+
+	user, err := h.querier.GetUserByEmail(ctx, req.Email)
+	if err != nil {
+		// sql.ErrNoRows or any other DB error — swallow and return safe reply.
+		return &pb.ForgotPasswordResponse{Message: safeReply}, nil
+	}
+
+	// Only generate a token for active accounts; inactive accounts are silently
+	// skipped (same safe reply — no information leaked).
+	if user.IsActive {
+		token, err := utils.GenerateResetToken(req.Email, h.activationSecret)
+		if err != nil {
+			log.Printf("[forgot-password] failed to generate reset token for %s: %v", req.Email, err)
+		} else if err := utils.PublishEmailEvent(h.rabbitMQURL, utils.EmailEvent{
+			Type:  "RESET",
+			Email: req.Email,
+			Token: token,
+		}); err != nil {
+			log.Printf("[forgot-password] failed to publish reset event for %s: %v", req.Email, err)
+		}
+	}
+
+	return &pb.ForgotPasswordResponse{Message: safeReply}, nil
+}
+
+// ResetPassword consumes a password-reset JWT and writes the new password.
+//
+// Flow (no auth header required — the reset token IS the credential):
+//  1. Validate new password length (min 8 characters).
+//  2. Verify the reset JWT — Unauthenticated if invalid or expired.
+//  3. Hash the new password with bcrypt.
+//  4. Persist via UpdateUserPassword.
+//
+// Mapped to: POST /auth/reset-password
+func (h *UserHandler) ResetPassword(ctx context.Context, req *pb.ResetPasswordRequest) (*pb.ResetPasswordResponse, error) {
+	// ── 1. Password validation ────────────────────────────────────────────────
+	if len(req.NewPassword) < 8 {
+		return nil, status.Errorf(codes.InvalidArgument, "password must be at least 8 characters")
+	}
+
+	// ── 2. Verify reset token ─────────────────────────────────────────────────
+	email, err := utils.VerifyResetToken(req.Token, h.activationSecret)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "invalid or expired reset token")
+	}
+
+	// ── 3. Hash password ──────────────────────────────────────────────────────
+	hashed, err := utils.HashPassword(req.NewPassword)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to hash password")
+	}
+
+	// ── 4. Persist ────────────────────────────────────────────────────────────
+	if err := h.querier.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{
+		PasswordHash: hashed,
+		Email:        email,
+	}); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to update password")
+	}
+
+	// ── 5. Notify user of the password change ─────────────────────────────────
+	// Fire-and-forget: the password is already committed, so a messaging failure
+	// must not surface as a gRPC error to the caller.
+	if err := utils.PublishEmailEvent(h.rabbitMQURL, utils.EmailEvent{
+		Type:  "CONFIRMATION",
+		Email: email,
+		Token: "",
+	}); err != nil {
+		log.Printf("[reset-password] failed to publish confirmation event for %s: %v", email, err)
+	}
+
+	return &pb.ResetPasswordResponse{Message: "Password reset successfully."}, nil
+}

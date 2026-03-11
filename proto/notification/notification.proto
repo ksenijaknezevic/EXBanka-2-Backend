@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package notification.v1;
+
+option go_package = "banka-backend/proto/notification;notificationv1";
+
+// ─── Messages ─────────────────────────────────────────────────────────────────
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1;
+}
+
+message SendEmailRequest {
+  string to      = 1;
+  string subject = 2;
+  string body    = 3;
+}
+
+message SendEmailResponse {
+  bool success = 1;
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────────
+
+service NotificationService {
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  rpc SendEmail(SendEmailRequest)     returns (SendEmailResponse);
+}
