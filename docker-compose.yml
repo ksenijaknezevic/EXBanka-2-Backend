@@ -1,0 +1,88 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: bank_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: bank_admin
+      POSTGRES_PASSWORD: super_secret_password
+      POSTGRES_DB: bank_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - bank-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bank_admin -d bank_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: bank_rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    networks:
+      - bank-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_PATH: services/user-service/cmd/server
+    container_name: bank_user_service
+    restart: on-failure
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=bank_admin
+      - DB_PASSWORD=super_secret_password
+      - DB_NAME=bank_db
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    ports:
+      - "8082:8080"   # host 8082 → container 8080
+      - "50052:50051" # host 50052 → container 50051
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - bank-net
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_PATH: services/notification-service/cmd/server
+    container_name: bank_notification_service
+    restart: on-failure
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_HOST=sandbox.smtp.mailtrap.io
+      - SMTP_PORT=2525
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - bank-net
+
+networks:
+  bank-net:
+    driver: bridge
+
+volumes:
+  pgdata:

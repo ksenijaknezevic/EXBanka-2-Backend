@@ -1,0 +1,68 @@
+type: google.api.Service
+config_version: 3
+name: universalledger.googleapis.com
+title: Universal Ledger API
+
+apis:
+- name: google.cloud.location.Locations
+- name: google.cloud.universalledger.v1.UniversalLedger
+
+types:
+- name: google.cloud.universalledger.v1.ActivateAccount
+- name: google.cloud.universalledger.v1.AddRoles
+- name: google.cloud.universalledger.v1.Burn
+- name: google.cloud.universalledger.v1.ChangeAccountManager
+- name: google.cloud.universalledger.v1.ClientTransaction
+- name: google.cloud.universalledger.v1.CreateAccount
+- name: google.cloud.universalledger.v1.CreateAccountManager
+- name: google.cloud.universalledger.v1.CreateClearinghouse
+- name: google.cloud.universalledger.v1.CreateContract
+- name: google.cloud.universalledger.v1.CreateContractTokenManager
+- name: google.cloud.universalledger.v1.CreateCurrencyOperator
+- name: google.cloud.universalledger.v1.CreateSnapshot
+- name: google.cloud.universalledger.v1.CreateTokenManager
+- name: google.cloud.universalledger.v1.DeactivateAccount
+- name: google.cloud.universalledger.v1.DecreaseTokenIssuanceLimit
+- name: google.cloud.universalledger.v1.GrantContractPermissions
+- name: google.cloud.universalledger.v1.IncreaseTokenIssuanceLimit
+- name: google.cloud.universalledger.v1.InvokeContractMethod
+- name: google.cloud.universalledger.v1.Mint
+- name: google.cloud.universalledger.v1.RemoveRoles
+- name: google.cloud.universalledger.v1.SettlementRequest
+- name: google.cloud.universalledger.v1.SignedTransaction
+- name: google.cloud.universalledger.v1.Transfer
+- name: google.cloud.universalledger.v1.TransferContractTokenManager
+- name: google.cloud.universalledger.v1.TransferCurrencyOperator
+- name: google.cloud.universalledger.v1.TransferPlatformOperator
+
+documentation:
+  summary: Universal Ledger API.
+  rules:
+  - selector: google.cloud.location.Locations.GetLocation
+    description: Gets information about a location.
+
+  - selector: google.cloud.location.Locations.ListLocations
+    description: |-
+      Lists information about the supported locations for this service.
+      This method can be called in two ways:
+
+      *   **List all public locations:** Use the path `GET /v1/locations`.
+      *   **List project-visible locations:** Use the path
+      `GET /v1/projects/{project_id}/locations`. This may include public
+      locations as well as private or other locations specifically visible
+      to the project.
+
+authentication:
+  rules:
+  - selector: google.cloud.location.Locations.GetLocation
+    oauth:
+      canonical_scopes: |-
+        https://www.googleapis.com/auth/cloud-platform
+  - selector: google.cloud.location.Locations.ListLocations
+    oauth:
+      canonical_scopes: |-
+        https://www.googleapis.com/auth/cloud-platform
+  - selector: 'google.cloud.universalledger.v1.UniversalLedger.*'
+    oauth:
+      canonical_scopes: |-
+        https://www.googleapis.com/auth/cloud-platform

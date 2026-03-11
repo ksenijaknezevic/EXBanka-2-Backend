@@ -1,0 +1,21 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "internal/database/query.sql"
+    schema: "internal/database/migrations"
+    gen:
+      go:
+        package: "sqlc"
+        out: "internal/database/sqlc"
+        # Emit json tags on all generated structs.
+        emit_json_tags: true
+        # Emit a Querier interface — useful for mocking in unit tests.
+        emit_interface: true
+        # Use *T for nullable columns instead of sql.NullString etc.
+        emit_pointers_for_null_types: true
+        # Don't pluralise table names when naming structs.
+        emit_exact_table_names: false
+        # Return empty slices instead of nil for repeated results.
+        emit_empty_slices: true
+        # Prepared statements add overhead; disable for now.
+        emit_prepared_queries: false
