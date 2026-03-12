@@ -13,15 +13,17 @@ import (
 	"banka-backend/services/notification-service/internal/smtp"
 )
 
-// EmailService sends transactional emails via Gmail SMTP (or other SMTP).
+// EmailService sends transactional emails via an injected smtp.Sender.
 // Recipient is always taken from the event (e.g. from frontend/request payload).
 type EmailService struct {
-	cfg *config.Config
+	cfg    *config.Config
+	sender smtp.Sender
 }
 
 // NewEmailService returns a ready EmailService.
-func NewEmailService(cfg *config.Config) *EmailService {
-	return &EmailService{cfg: cfg}
+// sender is the SMTP transport; inject smtp.NewRealSender(cfg) in production.
+func NewEmailService(cfg *config.Config, sender smtp.Sender) *EmailService {
+	return &EmailService{cfg: cfg, sender: sender}
 }
 
 // SendEmail dispatches an HTML email based on the event type.
@@ -64,7 +66,7 @@ func (s *EmailService) SendEmail(event domain.EmailEvent) error {
 		return fmt.Errorf("template execute: %w", err)
 	}
 
-	if err := smtp.Send(s.cfg, recipient, subject, body.String()); err != nil {
+	if err := s.sender.Send(recipient, subject, body.String()); err != nil {
 		log.Printf("[notification] send email failed type=%s recipient=%s: %v", event.Type, recipient, err)
 		return err
 	}

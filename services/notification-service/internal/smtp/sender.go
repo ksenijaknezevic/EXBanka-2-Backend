@@ -13,6 +13,28 @@ import (
 	"banka-backend/services/notification-service/internal/config"
 )
 
+// Sender abstracts SMTP dispatch for testability.
+// The production implementation is RealSender; tests inject a mock.
+type Sender interface {
+	Send(recipient, subject, bodyHTML string) error
+}
+
+// RealSender is the production SMTP sender. It holds config so the interface
+// method signature does not need to accept it on every call.
+type RealSender struct {
+	cfg *config.Config
+}
+
+// NewRealSender creates a production SMTP sender bound to cfg.
+func NewRealSender(cfg *config.Config) *RealSender {
+	return &RealSender{cfg: cfg}
+}
+
+// Send dispatches a single HTML email via the configured SMTP server.
+func (s *RealSender) Send(recipient, subject, bodyHTML string) error {
+	return Send(s.cfg, recipient, subject, bodyHTML)
+}
+
 // Send sends a single HTML email to the given recipient using the configured
 // SMTP server. For Gmail (smtp.gmail.com:587) it uses STARTTLS and app password auth.
 // recipient must be the destination address (e.g. from the frontend/request payload).

@@ -1,0 +1,2287 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>config: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">banka-backend/services/notification-service/internal/config/config.go (100.0%)</option>
+				
+				<option value="file1">banka-backend/services/notification-service/internal/handler/grpc_handler.go (100.0%)</option>
+				
+				<option value="file2">banka-backend/services/notification-service/internal/handler/http_handler.go (100.0%)</option>
+				
+				<option value="file3">banka-backend/services/notification-service/internal/service/notification_service.go (91.7%)</option>
+				
+				<option value="file4">banka-backend/services/notification-service/internal/testutil/helpers.go (0.0%)</option>
+				
+				<option value="file5">banka-backend/services/user-service/internal/config/config.go (100.0%)</option>
+				
+				<option value="file6">banka-backend/services/user-service/internal/handler/grpc_handler.go (83.2%)</option>
+				
+				<option value="file7">banka-backend/services/user-service/internal/handler/http_handler.go (100.0%)</option>
+				
+				<option value="file8">banka-backend/services/user-service/internal/interceptor/auth_interceptor.go (100.0%)</option>
+				
+				<option value="file9">banka-backend/services/user-service/internal/interceptor/testing.go (0.0%)</option>
+				
+				<option value="file10">banka-backend/services/user-service/internal/service/user_service.go (90.5%)</option>
+				
+				<option value="file11">banka-backend/services/user-service/internal/testutil/helpers.go (0.0%)</option>
+				
+				<option value="file12">banka-backend/services/user-service/internal/utils/jwt.go (92.3%)</option>
+				
+				<option value="file13">banka-backend/services/user-service/internal/utils/password.go (80.0%)</option>
+				
+				<option value="file14">banka-backend/services/user-service/internal/utils/rabbitmq.go (0.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">no coverage</span>
+				<span class="cov1">low coverage</span>
+				<span class="cov2">*</span>
+				<span class="cov3">*</span>
+				<span class="cov4">*</span>
+				<span class="cov5">*</span>
+				<span class="cov6">*</span>
+				<span class="cov7">*</span>
+				<span class="cov8">*</span>
+				<span class="cov9">*</span>
+				<span class="cov10">high coverage</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">// Package config loads notification-service configuration from ENV vars.
+// Required for Gmail SMTP: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, FROM_EMAIL, FRONTEND_URL.
+package config
+
+import (
+        "os"
+        "strings"
+)
+
+// Config holds all runtime configuration for the notification service.
+type Config struct {
+        RabbitMQURL string // RABBITMQ_URL
+        SMTPHost    string // SMTP_HOST (e.g. smtp.gmail.com)
+        SMTPPort    string // SMTP_PORT (e.g. 587 for Gmail with STARTTLS)
+        SMTPUser    string // SMTP_USER (e.g. your-email@gmail.com or app account)
+        SMTPPass    string // SMTP_PASS (Gmail app password; never logged)
+        FromEmail   string // FROM_EMAIL (sender address)
+        FrontendURL string // FRONTEND_URL (base URL for activation/reset links)
+}
+
+// LoadConfig returns a Config populated from environment variables.
+// Values are trimmed of leading/trailing spaces. Set env (e.g. from .env) before calling.
+func LoadConfig() *Config <span class="cov4" title="4">{
+        return &amp;Config{
+                RabbitMQURL: trim(getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")),
+                SMTPHost:    trim(getEnv("SMTP_HOST", "smtp.gmail.com")),
+                SMTPPort:    trim(getEnv("SMTP_PORT", "587")),
+                SMTPUser:    trim(getEnv("SMTP_USER", "")),
+                SMTPPass:    trim(getEnv("SMTP_PASS", "")),
+                FromEmail:   trim(getEnv("FROM_EMAIL", "")),
+                FrontendURL: trim(getEnv("FRONTEND_URL", "http://localhost:3001")),
+        }
+}</span>
+
+func getEnv(key, fallback string) string <span class="cov10" title="28">{
+        if v := os.Getenv(key); v != "" </span><span class="cov7" title="11">{
+                return v
+        }</span>
+        <span class="cov8" title="17">return fallback</span>
+}
+
+func trim(s string) string <span class="cov10" title="28">{
+        return strings.TrimSpace(s)
+}</span>
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">// Package handler — gRPC server handler for notification-service.
+// Implements the NotificationService gRPC interface defined in
+// proto/notification/notification.proto.
+// Run `make proto` to generate the concrete interface; this file provides the
+// implementation skeleton.
+package handler
+
+import (
+        "context"
+
+        "banka-backend/services/notification-service/internal/domain"
+
+        "google.golang.org/grpc/codes"
+        "google.golang.org/grpc/status"
+)
+
+// ─── Proto stubs (replace with protoc-generated types after `make proto`) ────
+
+type NotifHealthCheckRequest  struct{}
+type NotifHealthCheckResponse struct{ Status string }
+
+type SendEmailRequest struct {
+        To      string
+        Subject string
+        Body    string
+}
+type SendEmailResponse struct{ Success bool }
+
+// ─── Handler ──────────────────────────────────────────────────────────────────
+
+// NotificationGRPCHandler implements the NotificationService gRPC server.
+type NotificationGRPCHandler struct {
+        svc domain.NotificationService
+}
+
+// NewNotificationGRPCHandler creates a handler with the given service.
+func NewNotificationGRPCHandler(svc domain.NotificationService) *NotificationGRPCHandler <span class="cov10" title="3">{
+        return &amp;NotificationGRPCHandler{svc: svc}
+}</span>
+
+// HealthCheck returns SERVING when the service is ready.
+func (h *NotificationGRPCHandler) HealthCheck(_ context.Context, _ *NotifHealthCheckRequest) (*NotifHealthCheckResponse, error) <span class="cov1" title="1">{
+        return &amp;NotifHealthCheckResponse{Status: "SERVING"}, nil
+}</span>
+
+// SendEmail delivers a notification via the use-case layer.
+func (h *NotificationGRPCHandler) SendEmail(ctx context.Context, req *SendEmailRequest) (*SendEmailResponse, error) <span class="cov6" title="2">{
+        n := &amp;domain.Notification{To: req.To, Subject: req.Subject, Body: req.Body}
+        if err := h.svc.SendEmail(n); err != nil </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.Internal, "send email failed: %v", err)
+        }</span>
+        <span class="cov1" title="1">return &amp;SendEmailResponse{Success: true}, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">// Package handler wires HTTP routes for notification-service.
+package handler
+
+import (
+        "net/http"
+
+        "banka-backend/services/notification-service/internal/domain"
+
+        "github.com/gin-gonic/gin"
+)
+
+// NotificationHTTPHandler handles inbound HTTP requests.
+type NotificationHTTPHandler struct {
+        svc domain.NotificationService
+}
+
+// NewNotificationHTTPHandler registers notification routes.
+func NewNotificationHTTPHandler(rg *gin.RouterGroup, svc domain.NotificationService) <span class="cov10" title="5">{
+        h := &amp;NotificationHTTPHandler{svc: svc}
+        rg.POST("/email", h.SendEmail)
+}</span>
+
+// SendEmail godoc
+// POST /api/v1/notifications/email
+func (h *NotificationHTTPHandler) SendEmail(c *gin.Context) <span class="cov10" title="5">{
+        var req struct {
+                To      string `json:"to"      binding:"required,email"`
+                Subject string `json:"subject" binding:"required"`
+                Body    string `json:"body"`
+        }
+        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov7" title="3">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        <span class="cov4" title="2">n := &amp;domain.Notification{To: req.To, Subject: req.Subject, Body: req.Body}
+        if err := h.svc.SendEmail(n); err != nil </span><span class="cov1" title="1">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        <span class="cov1" title="1">c.JSON(http.StatusOK, gin.H{"status": "sent"})</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">// Package service contains notification use-case logic.
+package service
+
+import (
+        "bytes"
+        "fmt"
+        "html/template"
+        "log"
+        "strings"
+
+        "banka-backend/services/notification-service/internal/config"
+        "banka-backend/services/notification-service/internal/domain"
+        "banka-backend/services/notification-service/internal/smtp"
+)
+
+// EmailService sends transactional emails via an injected smtp.Sender.
+// Recipient is always taken from the event (e.g. from frontend/request payload).
+type EmailService struct {
+        cfg    *config.Config
+        sender smtp.Sender
+}
+
+// NewEmailService returns a ready EmailService.
+// sender is the SMTP transport; inject smtp.NewRealSender(cfg) in production.
+func NewEmailService(cfg *config.Config, sender smtp.Sender) *EmailService <span class="cov10" title="7">{
+        return &amp;EmailService{cfg: cfg, sender: sender}
+}</span>
+
+// SendEmail dispatches an HTML email based on the event type.
+// event.Email is the recipient (dynamic from frontend form / request / RabbitMQ payload).
+// Links: activation = FRONTEND_URL/activate?token=...; reset = FRONTEND_URL/reset-password?token=...
+func (s *EmailService) SendEmail(event domain.EmailEvent) error <span class="cov10" title="7">{
+        recipient := strings.TrimSpace(event.Email)
+        if recipient == "" </span><span class="cov1" title="1">{
+                return fmt.Errorf("recipient email is required")
+        }</span>
+
+        <span class="cov9" title="6">var subject, tmplStr string
+        switch event.Type </span>{
+        case "ACTIVATION":<span class="cov6" title="3">
+                subject = "Activate Your EXBanka Account"
+                tmplStr = "&lt;h1&gt;Welcome to EXBanka!&lt;/h1&gt;&lt;p&gt;Click &lt;a href='{{.FrontendURL}}/activate?token={{.Token}}'&gt;here&lt;/a&gt; to set your password and activate your account.&lt;/p&gt;"</span>
+        case "RESET":<span class="cov1" title="1">
+                subject = "Password Reset Request"
+                tmplStr = "&lt;h1&gt;Password Reset&lt;/h1&gt;&lt;p&gt;Click &lt;a href='{{.FrontendURL}}/reset-password?token={{.Token}}'&gt;here&lt;/a&gt; to reset your password.&lt;/p&gt;"</span>
+        case "CONFIRMATION":<span class="cov1" title="1">
+                subject = "Password Changed Successfully"
+                tmplStr = "&lt;h1&gt;Password Changed&lt;/h1&gt;&lt;p&gt;Your password has been successfully updated. If you did not make this change, please contact support immediately.&lt;/p&gt;"</span>
+        default:<span class="cov1" title="1">
+                return fmt.Errorf("unknown email event type: %s", event.Type)</span>
+        }
+
+        <span class="cov8" title="5">tmpl, err := template.New("email").Parse(tmplStr)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("template parse: %w", err)
+        }</span>
+
+        <span class="cov8" title="5">var body bytes.Buffer
+        if err := tmpl.Execute(&amp;body, struct {
+                FrontendURL string
+                Token       string
+        }{
+                FrontendURL: s.cfg.FrontendURL,
+                Token:       event.Token,
+        }); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("template execute: %w", err)
+        }</span>
+
+        <span class="cov8" title="5">if err := s.sender.Send(recipient, subject, body.String()); err != nil </span><span class="cov1" title="1">{
+                log.Printf("[notification] send email failed type=%s recipient=%s: %v", event.Type, recipient, err)
+                return err
+        }</span>
+        <span class="cov7" title="4">log.Printf("[notification] email sent type=%s to %s", event.Type, recipient)
+        return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">// Package testutil provides shared helpers for notification-service unit tests.
+// Nothing in this package is compiled into the production binary.
+package testutil
+
+import (
+        "banka-backend/services/notification-service/internal/config"
+)
+
+// TestConfig returns a *config.Config populated with safe, non-functional values
+// suitable for unit tests (no real SMTP server is contacted).
+func TestConfig() *config.Config <span class="cov0" title="0">{
+        return &amp;config.Config{
+                RabbitMQURL: "amqp://guest:guest@localhost:5672/",
+                SMTPHost:    "smtp.example.com",
+                SMTPPort:    "587",
+                SMTPUser:    "test@example.com",
+                SMTPPass:    "test-password",
+                FromEmail:   "noreply@example.com",
+                FrontendURL: "http://localhost:3001",
+        }
+}</span>
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">// Package config loads all configuration from environment variables.
+// Clean Architecture: infrastructure layer — no business logic here.
+package config
+
+import (
+        "fmt"
+        "os"
+)
+
+// Config holds all runtime configuration for user-service.
+type Config struct {
+        // HTTP
+        HTTPAddr string // e.g. "0.0.0.0:8080"
+
+        // gRPC
+        GRPCAddr string // e.g. "0.0.0.0:50051"
+
+        // PostgreSQL
+        DBHost     string
+        DBPort     string
+        DBUser     string
+        DBPassword string
+        DBName     string
+
+        // JWT
+        JWTAccessSecret     string
+        JWTRefreshSecret    string
+        JWTActivationSecret string
+
+        // Messaging
+        RabbitMQURL string
+}
+
+// Load reads ENV vars and returns a populated Config.
+// Required vars: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME.
+// Optional vars fall back to sensible defaults.
+func Load() (*Config, error) <span class="cov6" title="8">{
+        required := []string{"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"}
+        for _, key := range required </span><span class="cov10" title="30">{
+                if os.Getenv(key) == "" </span><span class="cov5" title="5">{
+                        return nil, fmt.Errorf("missing required env var: %s", key)
+                }</span>
+        }
+
+        <span class="cov3" title="3">return &amp;Config{
+                HTTPAddr: getEnv("HTTP_ADDR", "0.0.0.0:8080"),
+                GRPCAddr: getEnv("GRPC_ADDR", "0.0.0.0:50051"),
+
+                DBHost:     os.Getenv("DB_HOST"),
+                DBPort:     os.Getenv("DB_PORT"),
+                DBUser:     os.Getenv("DB_USER"),
+                DBPassword: os.Getenv("DB_PASSWORD"),
+                DBName:     os.Getenv("DB_NAME"),
+
+                JWTAccessSecret:     getEnv("JWT_ACCESS_SECRET", "change-me-access-secret"),
+                JWTRefreshSecret:    getEnv("JWT_REFRESH_SECRET", "change-me-refresh-secret"),
+                JWTActivationSecret: getEnv("JWT_ACTIVATION_SECRET", "change-me-activation-secret"),
+
+                RabbitMQURL: getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
+        }, nil</span>
+}
+
+// DSN returns the PostgreSQL connection string for GORM.
+func (c *Config) DSN() string <span class="cov1" title="1">{
+        return fmt.Sprintf(
+                "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC",
+                c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName,
+        )
+}</span>
+
+func getEnv(key, fallback string) string <span class="cov8" title="18">{
+        if v := os.Getenv(key); v != "" </span><span class="cov5" title="6">{
+                return v
+        }</span>
+        <span class="cov7" title="12">return fallback</span>
+}
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">// Package handler — gRPC delivery layer.
+// Implements pb.UserServiceServer generated from proto/user/user.proto.
+//
+// Prerequisites before this package compiles:
+//   - Run `make proto`        → generates banka-backend/proto/user (pb package)
+//   - Run `sqlc generate`     → generates banka-backend/services/user-service/internal/database/sqlc
+package handler
+
+import (
+        "context"
+        "database/sql"
+        "errors"
+        "log"
+        "strconv"
+        "strings"
+        "time"
+
+        pb "banka-backend/proto/user"
+        db "banka-backend/services/user-service/internal/database/sqlc"
+        "banka-backend/services/user-service/internal/interceptor"
+        "banka-backend/services/user-service/internal/utils"
+
+        "github.com/jackc/pgx/v5/pgconn"
+        "google.golang.org/grpc/codes"
+        "google.golang.org/grpc/status"
+        "google.golang.org/protobuf/types/known/timestamppb"
+)
+
+// UserHandler implements pb.UserServiceServer.
+// Embedding UnimplementedUserServiceServer satisfies the interface for any RPC
+// methods not yet overridden and provides forward-compatibility when new RPCs
+// are added to the proto.
+type UserHandler struct {
+        pb.UnimplementedUserServiceServer
+        querier          db.Querier           // injected sqlc query layer (non-transactional reads)
+        sqlDB            *sql.DB              // raw connection pool — used only to open transactions
+        accessSecret     string               // HMAC secret for signing access tokens
+        refreshSecret    string               // HMAC secret for signing refresh tokens
+        activationSecret string               // HMAC secret for signing activation/reset tokens
+        publisher        utils.EmailPublisher // abstracts RabbitMQ publishing for testability
+}
+
+// NewUserHandler constructs a UserHandler.
+// sqlDB is required for handlers that need multi-statement transactions.
+// publisher handles async email event dispatch; inject utils.NewAMQPPublisher in production.
+func NewUserHandler(q db.Querier, sqlDB *sql.DB, accessSecret, refreshSecret, activationSecret string, publisher utils.EmailPublisher) *UserHandler <span class="cov10" title="65">{
+        return &amp;UserHandler{
+                querier:          q,
+                sqlDB:            sqlDB,
+                accessSecret:     accessSecret,
+                refreshSecret:    refreshSecret,
+                activationSecret: activationSecret,
+                publisher:        publisher,
+        }
+}</span>
+
+// ─── Health ───────────────────────────────────────────────────────────────────
+
+// HealthCheck responds to both liveness probes and the gRPC-Gateway GET /health
+// route defined in the proto HTTP annotation.
+func (h *UserHandler) HealthCheck(_ context.Context, _ *pb.HealthCheckRequest) (*pb.HealthCheckResponse, error) <span class="cov1" title="1">{
+        return &amp;pb.HealthCheckResponse{Status: "SERVING"}, nil
+}</span>
+
+// ─── Employee management (Admin only) ────────────────────────────────────────
+
+// CreateEmployee creates a new employee account without a password.
+//
+// Flow (all steps run inside a single DB transaction):
+//  1. ADMIN-only guard via JWT claims.
+//  2. Validate mandatory fields (email, first_name, last_name).
+//  3. INSERT into users — password_hash/salt_password left empty for activation.
+//  4. INSERT into employee_details — username derived from first.last if omitted.
+//  5. Loop through requested permissions and INSERT into user_permissions.
+//  6. COMMIT; return the new user ID + email.
+//
+// NOTE: notification/activation-email trigger is deferred to a later phase.
+// Mapped to: POST /employee
+func (h *UserHandler) CreateEmployee(ctx context.Context, req *pb.CreateEmployeeRequest) (*pb.CreateEmployeeResponse, error) <span class="cov6" title="12">{
+        // ── 1. Authorization — ADMIN only ─────────────────────────────────────────
+        claims, ok := interceptor.ClaimsFromContext(ctx)
+        if !ok || claims.UserType != "ADMIN" </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.PermissionDenied, "only administrators can create employees")
+        }</span>
+
+        // ── 2. Mandatory field validation ─────────────────────────────────────────
+        <span class="cov6" title="11">switch </span>{
+        case strings.TrimSpace(req.Email) == "":<span class="cov1" title="1">
+                return nil, status.Errorf(codes.InvalidArgument, "email is required")</span>
+        case strings.TrimSpace(req.FirstName) == "":<span class="cov1" title="1">
+                return nil, status.Errorf(codes.InvalidArgument, "first_name is required")</span>
+        case strings.TrimSpace(req.LastName) == "":<span class="cov1" title="1">
+                return nil, status.Errorf(codes.InvalidArgument, "last_name is required")</span>
+        case req.BirthDate &gt; 0 &amp;&amp; req.BirthDate &gt; time.Now().UnixMilli():<span class="cov1" title="1">
+                return nil, status.Errorf(codes.InvalidArgument, "birth date cannot be in the future")</span>
+        case !isValidPhone(req.PhoneNumber):<span class="cov1" title="1">
+                return nil, status.Errorf(codes.InvalidArgument, "phone number may only contain digits and an optional leading +")</span>
+        }
+
+        // ── 3. Open transaction ───────────────────────────────────────────────────
+        <span class="cov4" title="6">tx, err := h.sqlDB.BeginTx(ctx, nil)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to begin transaction")
+        }</span>
+        // Rollback is a no-op once Commit succeeds.
+        <span class="cov4" title="6">defer tx.Rollback() //nolint:errcheck
+
+        qtx := db.New(tx) // transaction-bound query layer
+
+        // ── 4. is_active default ──────────────────────────────────────────────────
+        isActive := true
+        if req.IsActive != nil </span><span class="cov0" title="0">{
+                isActive = *req.IsActive
+        }</span>
+
+        // ── 5. INSERT users ───────────────────────────────────────────────────────
+        // Resolve the user_type: default to EMPLOYEE when unspecified.
+        <span class="cov4" title="6">userType := userTypeToString(req.UserType)
+        if userType == "" </span><span class="cov4" title="5">{
+                userType = "EMPLOYEE"
+        }</span>
+
+        <span class="cov4" title="6">newUser, err := qtx.CreateUser(ctx, db.CreateUserParams{
+                Email:        strings.TrimSpace(req.Email),
+                PasswordHash: "", // set during account activation (Issue 11)
+                SaltPassword: "", // set during account activation (Issue 11)
+                UserType:     userType,
+                FirstName:    strings.TrimSpace(req.FirstName),
+                LastName:     strings.TrimSpace(req.LastName),
+                BirthDate:    req.BirthDate,
+                Gender:       nullStrIf(genderToString(req.Gender), req.Gender != pb.Gender_GENDER_UNSPECIFIED),
+                PhoneNumber:  nullStrIf(req.PhoneNumber, req.PhoneNumber != ""),
+                Address:      nullStrIf(req.Address, req.Address != ""),
+                IsActive:     isActive,
+        })
+        if err != nil </span><span class="cov2" title="2">{
+                if isUniqueViolation(err) </span><span class="cov1" title="1">{
+                        return nil, status.Errorf(codes.AlreadyExists, "email already registered: %s", req.Email)
+                }</span>
+                <span class="cov1" title="1">return nil, status.Errorf(codes.Internal, "failed to create user")</span>
+        }
+
+        // ── 6. INSERT employee_details ────────────────────────────────────────────
+        // Username falls back to "firstname.lastname" (lowercase) when not supplied.
+        <span class="cov3" title="4">username := strings.TrimSpace(req.Username)
+        if username == "" </span><span class="cov3" title="3">{
+                username = strings.ToLower(req.FirstName + "." + req.LastName)
+        }</span>
+
+        <span class="cov3" title="4">position := strings.TrimSpace(req.Position)
+        if userType == "ADMIN" </span><span class="cov1" title="1">{
+                position = "Administrator"
+        }</span>
+
+        <span class="cov3" title="4">err = qtx.CreateEmployeeDetails(ctx, db.CreateEmployeeDetailsParams{
+                UserID:     newUser.ID,
+                Username:   username,
+                Position:   nullStrIf(position, position != ""),
+                Department: nullStrIf(req.Department, req.Department != ""),
+        })
+        if err != nil </span><span class="cov1" title="1">{
+                if isUniqueViolation(err) </span><span class="cov1" title="1">{
+                        return nil, status.Errorf(codes.AlreadyExists, "username already taken: %s", username)
+                }</span>
+                <span class="cov0" title="0">return nil, status.Errorf(codes.Internal, "failed to create employee details")</span>
+        }
+
+        // ── 7. Assign permissions ─────────────────────────────────────────────────
+        // ADMIN users derive all permissions from their user_type in the JWT; no
+        // DB permission rows are required or meaningful for them.
+        <span class="cov3" title="3">if userType != "ADMIN" </span><span class="cov2" title="2">{
+                for _, code := range req.Permissions </span><span class="cov1" title="1">{
+                        if strings.TrimSpace(code) == "" </span><span class="cov0" title="0">{
+                                continue</span>
+                        }
+                        <span class="cov1" title="1">if err := qtx.AssignUserPermission(ctx, db.AssignUserPermissionParams{
+                                UserID:         newUser.ID,
+                                PermissionCode: code,
+                        }); err != nil </span><span class="cov0" title="0">{
+                                return nil, status.Errorf(codes.Internal, "failed to assign permission %q", code)
+                        }</span>
+                }
+        }
+
+        // ── 8. Commit ─────────────────────────────────────────────────────────────
+        <span class="cov3" title="3">if err := tx.Commit(); err != nil </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.Internal, "failed to commit transaction")
+        }</span>
+
+        // ── 9. Publish activation event ───────────────────────────────────────────
+        // The user is already committed; any messaging failure must NOT roll back
+        // the DB or return an error to the caller — the frontend would have no way
+        // to reconcile a committed row against a gRPC error response.
+        <span class="cov2" title="2">token, err := utils.GenerateActivationToken(req.Email, h.activationSecret)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Printf("[create-employee] failed to generate activation token for %s: %v", req.Email, err)
+        }</span> else<span class="cov2" title="2"> if err := h.publisher.Publish(utils.EmailEvent{
+                Type:  "ACTIVATION",
+                Email: req.Email,
+                Token: token,
+        }); err != nil </span><span class="cov0" title="0">{
+                log.Printf("[create-employee] failed to publish activation event for %s: %v", req.Email, err)
+        }</span>
+
+        <span class="cov2" title="2">return &amp;pb.CreateEmployeeResponse{
+                Id:    newUser.ID,
+                Email: newUser.Email,
+        }, nil</span>
+}
+
+// ─── Employee update (Issue 8) ────────────────────────────────────────────────
+
+// UpdateEmployee replaces all mutable fields of an existing employee and
+// atomically swaps their full permission set.
+//
+// Authorization: caller must be ADMIN or hold MANAGE_USERS permission.
+//
+// Flow:
+//  1. Auth guard.
+//  2. Validate mandatory fields (id, email, first_name, last_name).
+//  3. Pre-fetch target user — NOT_FOUND if missing; PERMISSION_DENIED if ADMIN.
+//  4. Begin transaction.
+//  5. UpdateUser — all mutable base columns including is_active.
+//  6. UpdateEmployeeDetails — position, department.
+//  7. DeleteUserPermissions — wipe old set.
+//  8. AssignUserPermission — re-assign each code in req.Permissions.
+//  9. Commit; read back fresh profile and return.
+//
+// Mapped to: PUT /employee/{id}
+func (h *UserHandler) UpdateEmployee(ctx context.Context, req *pb.UpdateEmployeeRequest) (*pb.UpdateEmployeeResponse, error) <span class="cov5" title="7">{
+        // ── 1. Authorization ──────────────────────────────────────────────────────
+        claims, ok := interceptor.ClaimsFromContext(ctx)
+        if !ok </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.PermissionDenied, "missing authentication claims")
+        }</span>
+        <span class="cov4" title="6">isAdmin := claims.UserType == "ADMIN"
+        hasManageUsers := false
+        for _, p := range claims.Permissions </span><span class="cov0" title="0">{
+                if p == "MANAGE_USERS" </span><span class="cov0" title="0">{
+                        hasManageUsers = true
+                        break</span>
+                }
+        }
+        <span class="cov4" title="6">if !isAdmin &amp;&amp; !hasManageUsers </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.PermissionDenied, "only admins or users with MANAGE_USERS permission can update employees")
+        }</span>
+
+        // ── 2. Mandatory field validation ─────────────────────────────────────────
+        <span class="cov4" title="5">switch </span>{
+        case req.Id == 0:<span class="cov1" title="1">
+                return nil, status.Errorf(codes.InvalidArgument, "id is required")</span>
+        case strings.TrimSpace(req.Email) == "":<span class="cov1" title="1">
+                return nil, status.Errorf(codes.InvalidArgument, "email is required")</span>
+        case strings.TrimSpace(req.FirstName) == "":<span class="cov0" title="0">
+                return nil, status.Errorf(codes.InvalidArgument, "first_name is required")</span>
+        case strings.TrimSpace(req.LastName) == "":<span class="cov0" title="0">
+                return nil, status.Errorf(codes.InvalidArgument, "last_name is required")</span>
+        case req.BirthDate &gt; 0 &amp;&amp; req.BirthDate &gt; time.Now().UnixMilli():<span class="cov0" title="0">
+                return nil, status.Errorf(codes.InvalidArgument, "birth date cannot be in the future")</span>
+        case !isValidPhone(req.PhoneNumber):<span class="cov0" title="0">
+                return nil, status.Errorf(codes.InvalidArgument, "phone number may only contain digits and an optional leading +")</span>
+        }
+
+        // ── 3. Pre-fetch target (not found + admin guard) ─────────────────────────
+        <span class="cov3" title="3">existing, err := h.querier.GetEmployeeByID(ctx, req.Id)
+        if err != nil </span><span class="cov0" title="0">{
+                if errors.Is(err, sql.ErrNoRows) </span><span class="cov0" title="0">{
+                        return nil, status.Errorf(codes.NotFound, "employee not found")
+                }</span>
+                <span class="cov0" title="0">return nil, status.Errorf(codes.Internal, "failed to fetch employee")</span>
+        }
+        <span class="cov3" title="3">if existing.UserType == "ADMIN" </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.PermissionDenied, "admin accounts cannot be edited")
+        }</span>
+
+        // ── 4. Begin transaction ──────────────────────────────────────────────────
+        <span class="cov3" title="3">tx, err := h.sqlDB.BeginTx(ctx, nil)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to begin transaction")
+        }</span>
+        <span class="cov3" title="3">defer tx.Rollback() //nolint:errcheck
+
+        qtx := db.New(tx)
+
+        // ── 5. UpdateUser ─────────────────────────────────────────────────────────
+        if err := qtx.UpdateUser(ctx, db.UpdateUserParams{
+                ID:          req.Id,
+                Email:       strings.TrimSpace(req.Email),
+                FirstName:   strings.TrimSpace(req.FirstName),
+                LastName:    strings.TrimSpace(req.LastName),
+                BirthDate:   req.BirthDate,
+                Gender:      nullStrIf(genderToString(req.Gender), req.Gender != pb.Gender_GENDER_UNSPECIFIED),
+                PhoneNumber: nullStrIf(req.PhoneNumber, req.PhoneNumber != ""),
+                Address:     nullStrIf(req.Address, req.Address != ""),
+                IsActive:    req.IsActive,
+        }); err != nil </span><span class="cov1" title="1">{
+                if isUniqueViolation(err) </span><span class="cov1" title="1">{
+                        return nil, status.Errorf(codes.AlreadyExists, "email already in use: %s", req.Email)
+                }</span>
+                <span class="cov0" title="0">return nil, status.Errorf(codes.Internal, "failed to update user")</span>
+        }
+
+        // ── 6. UpdateEmployeeDetails ──────────────────────────────────────────────
+        <span class="cov2" title="2">if err := qtx.UpdateEmployeeDetails(ctx, db.UpdateEmployeeDetailsParams{
+                UserID:     req.Id,
+                Position:   nullStrIf(req.Position, req.Position != ""),
+                Department: nullStrIf(req.Department, req.Department != ""),
+        }); err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to update employee details")
+        }</span>
+
+        // ── 7. DeleteUserPermissions ──────────────────────────────────────────────
+        <span class="cov2" title="2">if err := qtx.DeleteUserPermissions(ctx, req.Id); err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to clear permissions")
+        }</span>
+
+        // ── 8. Re-assign permissions ──────────────────────────────────────────────
+        <span class="cov2" title="2">for _, code := range req.Permissions </span><span class="cov1" title="1">{
+                if strings.TrimSpace(code) == "" </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+                <span class="cov1" title="1">if err := qtx.AssignUserPermission(ctx, db.AssignUserPermissionParams{
+                        UserID:         req.Id,
+                        PermissionCode: code,
+                }); err != nil </span><span class="cov0" title="0">{
+                        return nil, status.Errorf(codes.Internal, "failed to assign permission %q", code)
+                }</span>
+        }
+
+        // ── 9. Commit ─────────────────────────────────────────────────────────────
+        <span class="cov2" title="2">if err := tx.Commit(); err != nil </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.Internal, "failed to commit transaction")
+        }</span>
+
+        // Read back fresh profile to include the updated permission set.
+        <span class="cov1" title="1">updated, err := h.querier.GetEmployeeByID(ctx, req.Id)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to read updated employee")
+        }</span>
+        <span class="cov1" title="1">perms, err := h.querier.GetUserPermissions(ctx, req.Id)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to read updated permissions")
+        }</span>
+
+        <span class="cov1" title="1">return &amp;pb.UpdateEmployeeResponse{
+                Employee: &amp;pb.EmployeeProfile{
+                        User: &amp;pb.User{
+                                Id:          updated.ID,
+                                Email:       updated.Email,
+                                FirstName:   updated.FirstName,
+                                LastName:    updated.LastName,
+                                BirthDate:   updated.BirthDate,
+                                Gender:      genderFromString(updated.Gender),
+                                PhoneNumber: fromNullStr(updated.PhoneNumber),
+                                Address:     fromNullStr(updated.Address),
+                                UserType:    userTypeFromString(updated.UserType),
+                                IsActive:    updated.IsActive,
+                                CreatedAt:   timestamppb.New(updated.CreatedAt),
+                        },
+                        Username:    updated.Username,
+                        Position:    fromNullStr(updated.Position),
+                        Department:  fromNullStr(updated.Department),
+                        Permissions: perms,
+                },
+        }, nil</span>
+}
+
+// ─── Toggle employee active (deactivate/activate any user including ADMIN) ───
+
+// ToggleEmployeeActive sets is_active for the given user (EMPLOYEE or ADMIN).
+// Authorization: ADMIN or MANAGE_USERS. Does not require fetching full profile,
+// so it works for ADMIN accounts that cannot be edited via UpdateEmployee.
+//
+// Mapped to: PATCH /employee/{id}/active (after make proto).
+func (h *UserHandler) ToggleEmployeeActive(ctx context.Context, req *pb.ToggleEmployeeActiveRequest) (*pb.ToggleEmployeeActiveResponse, error) <span class="cov4" title="5">{
+        claims, ok := interceptor.ClaimsFromContext(ctx)
+        if !ok </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.PermissionDenied, "missing authentication claims")
+        }</span>
+        <span class="cov3" title="4">isAdmin := claims.UserType == "ADMIN"
+        hasManageUsers := false
+        for _, p := range claims.Permissions </span><span class="cov0" title="0">{
+                if p == "MANAGE_USERS" </span><span class="cov0" title="0">{
+                        hasManageUsers = true
+                        break</span>
+                }
+        }
+        <span class="cov3" title="4">if !isAdmin &amp;&amp; !hasManageUsers </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.PermissionDenied, "only admins or users with MANAGE_USERS permission can toggle active status")
+        }</span>
+
+        <span class="cov3" title="4">if req.Id == 0 </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.InvalidArgument, "id is required")
+        }</span>
+
+        <span class="cov3" title="3">user, err := h.querier.GetUserByID(ctx, req.Id)
+        if err != nil </span><span class="cov1" title="1">{
+                if errors.Is(err, sql.ErrNoRows) </span><span class="cov1" title="1">{
+                        return nil, status.Errorf(codes.NotFound, "user not found")
+                }</span>
+                <span class="cov0" title="0">return nil, status.Errorf(codes.Internal, "failed to fetch user")</span>
+        }
+
+        // Only allow toggling employees and admins, not clients
+        <span class="cov2" title="2">if user.UserType != "ADMIN" &amp;&amp; user.UserType != "EMPLOYEE" </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.PermissionDenied, "can only toggle active status for employees and administrators")
+        }</span>
+
+        <span class="cov1" title="1">if err := h.querier.UpdateUserActive(ctx, db.UpdateUserActiveParams{
+                ID:       req.Id,
+                IsActive: req.IsActive,
+        }); err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to update active status")
+        }</span>
+
+        <span class="cov1" title="1">return &amp;pb.ToggleEmployeeActiveResponse{IsActive: req.IsActive}, nil</span>
+}
+
+// ─── Account activation / set password (Issue 11) ────────────────────────────
+
+// SetPassword lets an employee set their initial password by presenting the
+// activation JWT they received by e-mail.
+//
+// Flow (no auth header required — the activation token IS the credential):
+//  1. Validate password length (min 8 characters).
+//  2. Verify the activation JWT — Unauthenticated if invalid or expired.
+//  3. Fetch the user by email — NotFound if the account no longer exists.
+//  4. Replay-attack guard: if password_hash is already set the token has been
+//     consumed; return FailedPrecondition so the link cannot be reused.
+//  5. Hash the new password with bcrypt.
+//  6. Persist the password_hash.
+//
+// Mapped to: POST /auth/set-password
+func (h *UserHandler) SetPassword(ctx context.Context, req *pb.SetPasswordRequest) (*pb.SetPasswordResponse, error) <span class="cov4" title="5">{
+        // ── 1. Password validation ────────────────────────────────────────────────
+        if len(req.Password) &lt; 8 </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.InvalidArgument, "password must be at least 8 characters")
+        }</span>
+
+        // ── 2. Verify activation token ────────────────────────────────────────────
+        <span class="cov3" title="4">email, err := utils.VerifyActivationToken(req.Token, h.activationSecret)
+        if err != nil </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.Unauthenticated, "invalid or expired activation token")
+        }</span>
+
+        // ── 3. Fetch user ─────────────────────────────────────────────────────────
+        <span class="cov3" title="3">user, err := h.querier.GetUserByEmail(ctx, email)
+        if err != nil </span><span class="cov1" title="1">{
+                if errors.Is(err, sql.ErrNoRows) </span><span class="cov1" title="1">{
+                        return nil, status.Errorf(codes.NotFound, "user not found")
+                }</span>
+                <span class="cov0" title="0">return nil, status.Errorf(codes.Internal, "failed to fetch user")</span>
+        }
+
+        // ── 4. Replay-attack guard ────────────────────────────────────────────────
+        // A non-empty password_hash means the account was already activated.
+        // The activation token must be treated as single-use: once the password
+        // is set any further use of the same token (valid for 24 h) is rejected.
+        <span class="cov2" title="2">if user.PasswordHash != "" </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.FailedPrecondition, "account is already activated and password is set; token is no longer valid")
+        }</span>
+
+        // ── 5. Hash password ──────────────────────────────────────────────────────
+        <span class="cov1" title="1">hashed, err := utils.HashPassword(req.Password)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to hash password")
+        }</span>
+
+        // ── 6. Persist ────────────────────────────────────────────────────────────
+        <span class="cov1" title="1">if err := h.querier.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{
+                PasswordHash: hashed,
+                Email:        email,
+        }); err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to update password")
+        }</span>
+
+        <span class="cov1" title="1">return &amp;pb.SetPasswordResponse{Message: "Password set successfully."}, nil</span>
+}
+
+// ActivateAccount lets an employee set their password via the activation token
+// received by e-mail.
+//
+// Flow (no auth header required — the activation token IS the credential):
+//  1. Validate passwords match and meet minimum length.
+//  2. Verify the activation JWT — Unauthenticated if invalid or expired.
+//  3. Fetch the user by email — NotFound if the account no longer exists.
+//  4. Replay-attack guard: if password_hash is already set the token has been
+//     consumed; return FailedPrecondition so the link cannot be reused.
+//  5. Hash the new password with bcrypt.
+//  6. Persist the password_hash.
+//
+// Mapped to: POST /activate
+func (h *UserHandler) ActivateAccount(ctx context.Context, req *pb.ActivateAccountRequest) (*pb.ActivateAccountResponse, error) <span class="cov4" title="5">{
+        // ── 1. Password validation ────────────────────────────────────────────────
+        if req.NewPassword != req.ConfirmPassword </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.InvalidArgument, "passwords do not match")
+        }</span>
+        <span class="cov3" title="4">if len(req.NewPassword) &lt; 8 </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.InvalidArgument, "password must be at least 8 characters")
+        }</span>
+
+        // ── 2. Verify activation token ────────────────────────────────────────────
+        <span class="cov3" title="3">email, err := utils.VerifyActivationToken(req.Token, h.activationSecret)
+        if err != nil </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.Unauthenticated, "invalid or expired activation token")
+        }</span>
+
+        // ── 3. Fetch user ─────────────────────────────────────────────────────────
+        <span class="cov2" title="2">user, err := h.querier.GetUserByEmail(ctx, email)
+        if err != nil </span><span class="cov0" title="0">{
+                if errors.Is(err, sql.ErrNoRows) </span><span class="cov0" title="0">{
+                        return nil, status.Errorf(codes.NotFound, "user not found")
+                }</span>
+                <span class="cov0" title="0">return nil, status.Errorf(codes.Internal, "failed to fetch user")</span>
+        }
+
+        // ── 4. Replay-attack guard ────────────────────────────────────────────────
+        <span class="cov2" title="2">if user.PasswordHash != "" </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.FailedPrecondition, "account is already activated; token is no longer valid")
+        }</span>
+
+        // ── 5. Hash password ──────────────────────────────────────────────────────
+        <span class="cov1" title="1">hashed, err := utils.HashPassword(req.NewPassword)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to hash password")
+        }</span>
+
+        // ── 6. Persist ────────────────────────────────────────────────────────────
+        <span class="cov1" title="1">if err := h.querier.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{
+                PasswordHash: hashed,
+                Email:        email,
+        }); err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to update password")
+        }</span>
+
+        // ── 7. Send confirmation email ────────────────────────────────────────────
+        // Fire-and-forget: password is already committed, messaging failure must not
+        // surface as a gRPC error — the account is activated regardless.
+        <span class="cov1" title="1">if err := h.publisher.Publish(utils.EmailEvent{
+                Type:  "CONFIRMATION",
+                Email: email,
+                Token: "",
+        }); err != nil </span><span class="cov0" title="0">{
+                log.Printf("[activate-account] failed to publish confirmation event for %s: %v", email, err)
+        }</span>
+
+        <span class="cov1" title="1">return &amp;pb.ActivateAccountResponse{Message: "Account activated successfully."}, nil</span>
+}
+
+// ─── Authentication ───────────────────────────────────────────────────────────
+
+// Login validates email + password and returns a JWT access/refresh token pair.
+//
+// Flow:
+//  1. Fetch user row by email — NOT_FOUND if email is unknown.
+//  2. Reject inactive accounts — PERMISSION_DENIED.
+//  3. Verify bcrypt password hash — UNAUTHENTICATED on mismatch.
+//  4. Fetch the user's permission codes from user_permissions.
+//  5. Issue access token (15 min) and refresh token (7 days).
+//
+// Mapped to: POST /login
+func (h *UserHandler) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) <span class="cov4" title="6">{
+        // ── 1. Lookup ─────────────────────────────────────────────────────────────
+        user, err := h.querier.GetUserByEmail(ctx, req.Email)
+        if err != nil </span><span class="cov2" title="2">{
+                if errors.Is(err, sql.ErrNoRows) </span><span class="cov1" title="1">{
+                        log.Printf("[login] user not found for email=%q", req.Email)
+                        return nil, status.Errorf(codes.NotFound, "no account found for that email")
+                }</span>
+                <span class="cov1" title="1">log.Printf("[login] DB error fetching user: %v", err)
+                return nil, status.Errorf(codes.Internal, "database error during login")</span>
+        }
+
+        // ── 2. Active check ───────────────────────────────────────────────────────
+        <span class="cov3" title="4">if !user.IsActive </span><span class="cov1" title="1">{
+                log.Printf("[login] account inactive: user_id=%d email=%q", user.ID, user.Email)
+                return nil, status.Errorf(codes.PermissionDenied, "account is inactive")
+        }</span>
+
+        // ── 3. Password verification ──────────────────────────────────────────────
+        // Comparing req.Password against user.PasswordHash only — SaltPassword is
+        // NOT appended because bcrypt embeds its own salt inside the hash itself.
+        <span class="cov3" title="3">if err := utils.CheckPassword(req.Password, user.PasswordHash); err != nil </span><span class="cov1" title="1">{
+                log.Printf("[login] bcrypt mismatch: user_id=%d hash_len=%d err=%v",
+                        user.ID, len(user.PasswordHash), err)
+                return nil, status.Errorf(codes.Unauthenticated, "invalid credentials")
+        }</span>
+
+        // ── 4. Permissions ────────────────────────────────────────────────────────
+        <span class="cov2" title="2">perms, err := h.querier.GetUserPermissions(ctx, user.ID)
+        if err != nil </span><span class="cov1" title="1">{
+                log.Printf("[login] failed to load permissions: user_id=%d err=%v", user.ID, err)
+                return nil, status.Errorf(codes.Internal, "failed to load permissions")
+        }</span>
+
+        // ── 5. Token generation ───────────────────────────────────────────────────
+        // Access token:  { sub, email, user_type, permissions[], iat, exp }
+        // Refresh token: { sub, iat, exp, token_type: "refresh" }
+        <span class="cov1" title="1">userIDStr := strconv.FormatInt(user.ID, 10)
+        accessToken, refreshToken, err := utils.GenerateTokens(
+                userIDStr,
+                user.Email,
+                user.UserType,
+                perms,
+                h.accessSecret,
+                h.refreshSecret,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to generate tokens")
+        }</span>
+
+        <span class="cov1" title="1">return &amp;pb.LoginResponse{
+                AccessToken:  accessToken,
+                RefreshToken: refreshToken,
+                TokenType:    "Bearer",
+                ExpiresIn:    900, // 15 minutes in seconds
+        }, nil</span>
+}
+
+// ─── Token refresh ────────────────────────────────────────────────────────────
+
+// RefreshToken validates a refresh token and issues a new access token.
+// The original refresh token is returned unchanged — no rolling sessions.
+//
+// Flow:
+//  1. Verify the refresh token signature + expiry; reject if it carries token_type != "refresh".
+//  2. Extract user ID from the sub claim and look the user up — NOT_FOUND if gone.
+//  3. Reject inactive accounts — PERMISSION_DENIED.
+//  4. Fetch fresh permissions so the new access token reflects any RBAC changes.
+//  5. Sign a new access token (15 min); echo the original refresh token back.
+//
+// Mapped to: POST /refresh-token
+func (h *UserHandler) RefreshToken(ctx context.Context, req *pb.RefreshTokenRequest) (*pb.RefreshTokenResponse, error) <span class="cov3" title="4">{
+        // ── 1. Verify refresh token ───────────────────────────────────────────────
+        refreshClaims, err := utils.VerifyRefreshToken(req.RefreshToken, h.refreshSecret)
+        if err != nil </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.Unauthenticated, "invalid refresh token: %v", err)
+        }</span>
+
+        // ── 2. User freshness check ───────────────────────────────────────────────
+        <span class="cov3" title="3">userIDInt, err := strconv.ParseInt(refreshClaims.Subject, 10, 64)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Unauthenticated, "malformed subject claim")
+        }</span>
+
+        <span class="cov3" title="3">user, err := h.querier.GetUserByID(ctx, userIDInt)
+        if err != nil </span><span class="cov1" title="1">{
+                if errors.Is(err, sql.ErrNoRows) </span><span class="cov1" title="1">{
+                        return nil, status.Errorf(codes.NotFound, "user no longer exists")
+                }</span>
+                <span class="cov0" title="0">return nil, status.Errorf(codes.Internal, "database error during token refresh")</span>
+        }
+
+        // ── 3. Active check ───────────────────────────────────────────────────────
+        <span class="cov2" title="2">if !user.IsActive </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.PermissionDenied, "account is inactive")
+        }</span>
+
+        // ── 4. Fresh permissions ──────────────────────────────────────────────────
+        <span class="cov1" title="1">perms, err := h.querier.GetUserPermissions(ctx, user.ID)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to load permissions")
+        }</span>
+
+        // ── 5. Issue new access token only ────────────────────────────────────────
+        <span class="cov1" title="1">userIDStr := strconv.FormatInt(user.ID, 10)
+        accessToken, err := utils.GenerateAccessToken(
+                userIDStr,
+                user.Email,
+                user.UserType,
+                perms,
+                h.accessSecret,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to generate access token")
+        }</span>
+
+        <span class="cov1" title="1">return &amp;pb.RefreshTokenResponse{
+                AccessToken:  accessToken,
+                RefreshToken: req.RefreshToken, // original token, unchanged
+                TokenType:    "Bearer",
+                ExpiresIn:    900, // 15 minutes
+        }, nil</span>
+}
+
+// ─── Permission codebook (Issue 5) ───────────────────────────────────────────
+
+// GetAllPermissions returns every row from the permissions table so the admin
+// frontend can populate Create/Edit Employee permission checkboxes.
+//
+// Authorization: ADMIN only.
+// Mapped to: GET /permissions
+func (h *UserHandler) GetAllPermissions(ctx context.Context, _ *pb.GetAllPermissionsRequest) (*pb.GetAllPermissionsResponse, error) <span class="cov3" title="3">{
+        // ── 1. Authorization — ADMIN only ─────────────────────────────────────────
+        claims, ok := interceptor.ClaimsFromContext(ctx)
+        if !ok || claims.UserType != "ADMIN" </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.PermissionDenied, "only administrators can list permissions")
+        }</span>
+
+        // ── 2. Query ──────────────────────────────────────────────────────────────
+        <span class="cov2" title="2">rows, err := h.querier.GetAllPermissions(ctx)
+        if err != nil </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.Internal, "failed to fetch permissions")
+        }</span>
+
+        // ── 3. Map &amp; return ───────────────────────────────────────────────────────
+        <span class="cov1" title="1">entries := make([]*pb.PermissionEntry, 0, len(rows))
+        for _, r := range rows </span><span class="cov3" title="3">{
+                if r.PermissionCode == "ADMIN_PERMISSION" </span><span class="cov1" title="1">{
+                        continue</span>
+                }
+                <span class="cov2" title="2">entries = append(entries, &amp;pb.PermissionEntry{
+                        Id:             int32(r.ID),
+                        PermissionCode: r.PermissionCode,
+                })</span>
+        }
+
+        <span class="cov1" title="1">return &amp;pb.GetAllPermissionsResponse{Permissions: entries}, nil</span>
+}
+
+// ─── Employee listing (Issue 6) ───────────────────────────────────────────────
+
+// GetAllEmployees lists employees with optional partial-match filters and pagination.
+//
+// Flow:
+//  1. Verify caller is ADMIN via JWT claims — PERMISSION_DENIED otherwise.
+//  2. Normalise pagination defaults (page=1, size=10 when zero).
+//  3. Map empty-string filters to sql.NullString{Valid:false} so the SQL
+//     `IS NULL` branch fires and returns all employees (critical frontend edge case).
+//  4. Query, map rows to EmployeeProfile, return.
+//
+// Mapped to: GET /employee
+func (h *UserHandler) GetAllEmployees(ctx context.Context, req *pb.GetAllEmployeesRequest) (*pb.GetAllEmployeesResponse, error) <span class="cov3" title="4">{
+        // ── 1. Authorization — ADMIN only ─────────────────────────────────────────
+        claims, ok := interceptor.ClaimsFromContext(ctx)
+        if !ok || claims.UserType != "ADMIN" </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.PermissionDenied, "only admins can list employees")
+        }</span>
+
+        // ── 2. Pagination defaults ────────────────────────────────────────────────
+        <span class="cov3" title="3">page := req.Page
+        if page &lt;= 0 </span><span class="cov1" title="1">{
+                page = 1
+        }</span>
+        <span class="cov3" title="3">pageSize := req.PageSize
+        if pageSize &lt;= 0 </span><span class="cov1" title="1">{
+                pageSize = 10
+        }</span>
+        <span class="cov3" title="3">offset := (page - 1) * pageSize
+
+        // ── 3. Optional filter mapping ────────────────────────────────────────────
+        // The frontend sends "" when a filter is cleared. An empty string must map
+        // to sql.NullString{Valid:false} so the SQL `IS NULL` branch fires and the
+        // filter is skipped entirely — returning all employees for that field.
+        params := db.ListEmployeesParams{
+                Limit:  pageSize,
+                Offset: offset,
+        }
+        if req.Email != "" </span><span class="cov0" title="0">{
+                params.Email = sql.NullString{String: req.Email, Valid: true}
+        }</span>
+        <span class="cov3" title="3">if req.FirstName != "" </span><span class="cov0" title="0">{
+                params.FirstName = sql.NullString{String: req.FirstName, Valid: true}
+        }</span>
+        <span class="cov3" title="3">if req.LastName != "" </span><span class="cov0" title="0">{
+                params.LastName = sql.NullString{String: req.LastName, Valid: true}
+        }</span>
+        <span class="cov3" title="3">if req.Position != "" </span><span class="cov0" title="0">{
+                params.Position = sql.NullString{String: req.Position, Valid: true}
+        }</span>
+
+        // ── 4. Query &amp; map ────────────────────────────────────────────────────────
+        <span class="cov3" title="3">rows, err := h.querier.ListEmployees(ctx, params)
+        if err != nil </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.Internal, "failed to list employees")
+        }</span>
+
+        <span class="cov2" title="2">employees := make([]*pb.EmployeeProfile, 0, len(rows))
+        for _, row := range rows </span><span class="cov1" title="1">{
+                employees = append(employees, &amp;pb.EmployeeProfile{
+                        User: &amp;pb.User{
+                                Id:          row.ID,
+                                Email:       row.Email,
+                                FirstName:   row.FirstName,
+                                LastName:    row.LastName,
+                                UserType:    userTypeFromString(row.UserType),
+                                IsActive:    row.IsActive,
+                                PhoneNumber: fromNullStr(row.PhoneNumber),
+                        },
+                        Position:   fromNullStr(row.Position),
+                        Department: fromNullStr(row.Department),
+                })
+        }</span>
+
+        <span class="cov2" title="2">return &amp;pb.GetAllEmployeesResponse{Employees: employees}, nil</span>
+}
+
+// ─── Employee detail (Issue 7) ────────────────────────────────────────────────
+
+// GetEmployeeByID returns the full employee profile + permissions for the edit form.
+//
+// Authorization: caller must be ADMIN or hold the MANAGE_USERS permission.
+//
+// Flow:
+//  1. Auth guard — PERMISSION_DENIED if caller is neither ADMIN nor MANAGE_USERS.
+//  2. Fetch users JOIN employee_details — NOT_FOUND if no matching row.
+//  3. Block ADMIN-type users from being returned through this endpoint (Issue 7 edge case).
+//  4. Fetch permissions — empty slice is valid (new employee with no permissions yet).
+//  5. Map to EmployeeProfile and return.
+//
+// Mapped to: GET /employee/{id}
+func (h *UserHandler) GetEmployeeByID(ctx context.Context, req *pb.GetEmployeeByIDRequest) (*pb.GetEmployeeByIDResponse, error) <span class="cov4" title="6">{
+        // ── 1. Authorization ──────────────────────────────────────────────────────
+        claims, ok := interceptor.ClaimsFromContext(ctx)
+        if !ok </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.PermissionDenied, "missing authentication claims")
+        }</span>
+        <span class="cov4" title="5">isAdmin := claims.UserType == "ADMIN"
+        hasManageUsers := false
+        for _, p := range claims.Permissions </span><span class="cov1" title="1">{
+                if p == "MANAGE_USERS" </span><span class="cov1" title="1">{
+                        hasManageUsers = true
+                        break</span>
+                }
+        }
+        <span class="cov4" title="5">if !isAdmin &amp;&amp; !hasManageUsers </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.PermissionDenied, "only admins or users with MANAGE_USERS permission can fetch employee details")
+        }</span>
+
+        // ── 2. Fetch employee row ─────────────────────────────────────────────────
+        <span class="cov3" title="4">row, err := h.querier.GetEmployeeByID(ctx, req.Id)
+        if err != nil </span><span class="cov1" title="1">{
+                if errors.Is(err, sql.ErrNoRows) </span><span class="cov1" title="1">{
+                        return nil, status.Errorf(codes.NotFound, "employee %d not found", req.Id)
+                }</span>
+                <span class="cov0" title="0">return nil, status.Errorf(codes.Internal, "failed to fetch employee")</span>
+        }
+
+        // ── 3. Block ADMIN-type targets (Issue 7 edge case) ───────────────────────
+        // Admin accounts are managed outside this employee-edit flow.
+        <span class="cov3" title="3">if row.UserType == "ADMIN" </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.PermissionDenied, "admin accounts cannot be edited through this endpoint")
+        }</span>
+
+        // ── 4. Fetch permissions ──────────────────────────────────────────────────
+        <span class="cov2" title="2">perms, err := h.querier.GetUserPermissions(ctx, row.ID)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to fetch permissions")
+        }</span>
+
+        // ── 5. Map and return ─────────────────────────────────────────────────────
+        <span class="cov2" title="2">return &amp;pb.GetEmployeeByIDResponse{
+                Employee: &amp;pb.EmployeeProfile{
+                        User: &amp;pb.User{
+                                Id:          row.ID,
+                                Email:       row.Email,
+                                FirstName:   row.FirstName,
+                                LastName:    row.LastName,
+                                BirthDate:   row.BirthDate,
+                                Gender:      genderFromString(row.Gender),
+                                PhoneNumber: fromNullStr(row.PhoneNumber),
+                                Address:     fromNullStr(row.Address),
+                                UserType:    userTypeFromString(row.UserType),
+                                IsActive:    row.IsActive,
+                                CreatedAt:   timestamppb.New(row.CreatedAt),
+                        },
+                        Username:    row.Username,
+                        Position:    fromNullStr(row.Position),
+                        Department:  fromNullStr(row.Department),
+                        Permissions: perms,
+                },
+        }, nil</span>
+}
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+// isUniqueViolation reports whether err is a PostgreSQL unique-constraint
+// violation (SQLSTATE 23505). Works with pgx/v5/stdlib errors.
+func isUniqueViolation(err error) bool <span class="cov5" title="8">{
+        var pgErr *pgconn.PgError
+        return errors.As(err, &amp;pgErr) &amp;&amp; pgErr.Code == "23505"
+}</span>
+
+// nullStrIf returns a valid sql.NullString when cond is true, NULL otherwise.
+// Used to map optional proto string fields to nullable DB columns.
+func nullStrIf(s string, cond bool) sql.NullString <span class="cov9" title="41">{
+        return sql.NullString{String: s, Valid: cond}
+}</span>
+
+// fromNullStr extracts the string value from a sql.NullString, returning "" when NULL.
+func fromNullStr(ns sql.NullString) string <span class="cov7" title="17">{
+        if ns.Valid </span><span class="cov1" title="1">{
+                return ns.String
+        }</span>
+        <span class="cov6" title="16">return ""</span>
+}
+
+// genderFromString converts the nullable DB gender column to the proto Gender enum.
+func genderFromString(ns sql.NullString) pb.Gender <span class="cov5" title="8">{
+        if !ns.Valid </span><span class="cov3" title="4">{
+                return pb.Gender_GENDER_UNSPECIFIED
+        }</span>
+        <span class="cov3" title="4">switch ns.String </span>{
+        case "MALE":<span class="cov1" title="1">
+                return pb.Gender_GENDER_MALE</span>
+        case "FEMALE":<span class="cov1" title="1">
+                return pb.Gender_GENDER_FEMALE</span>
+        case "OTHER":<span class="cov1" title="1">
+                return pb.Gender_GENDER_OTHER</span>
+        default:<span class="cov1" title="1">
+                return pb.Gender_GENDER_UNSPECIFIED</span>
+        }
+}
+
+// genderToString converts the proto Gender enum to the DB VARCHAR value.
+func genderToString(g pb.Gender) string <span class="cov6" title="13">{
+        switch g </span>{
+        case pb.Gender_GENDER_MALE:<span class="cov1" title="1">
+                return "MALE"</span>
+        case pb.Gender_GENDER_FEMALE:<span class="cov1" title="1">
+                return "FEMALE"</span>
+        case pb.Gender_GENDER_OTHER:<span class="cov1" title="1">
+                return "OTHER"</span>
+        default:<span class="cov5" title="10">
+                return ""</span>
+        }
+}
+
+// userTypeFromString maps the DB user_type string to the proto enum.
+func userTypeFromString(s string) pb.UserType <span class="cov5" title="9">{
+        switch s </span>{
+        case "ADMIN":<span class="cov1" title="1">
+                return pb.UserType_USER_TYPE_ADMIN</span>
+        case "EMPLOYEE":<span class="cov4" title="5">
+                return pb.UserType_USER_TYPE_EMPLOYEE</span>
+        case "CLIENT":<span class="cov1" title="1">
+                return pb.UserType_USER_TYPE_CLIENT</span>
+        default:<span class="cov2" title="2">
+                return pb.UserType_USER_TYPE_UNSPECIFIED</span>
+        }
+}
+
+// userTypeToString maps the proto UserType enum to the DB VARCHAR value.
+// Returns "" for UNSPECIFIED so the caller can apply a default.
+func userTypeToString(t pb.UserType) string <span class="cov5" title="10">{
+        switch t </span>{
+        case pb.UserType_USER_TYPE_ADMIN:<span class="cov2" title="2">
+                return "ADMIN"</span>
+        case pb.UserType_USER_TYPE_EMPLOYEE:<span class="cov1" title="1">
+                return "EMPLOYEE"</span>
+        case pb.UserType_USER_TYPE_CLIENT:<span class="cov1" title="1">
+                return "CLIENT"</span>
+        default:<span class="cov4" title="6">
+                return ""</span>
+        }
+}
+
+// isValidPhone reports whether s matches ^\+?[0-9]+$ (digits only, optional
+// leading +). An empty string is also accepted because phone is an optional field.
+func isValidPhone(s string) bool <span class="cov7" title="18">{
+        if s == "" </span><span class="cov5" title="10">{
+                return true
+        }</span>
+        <span class="cov5" title="8">i := 0
+        if s[0] == '+' </span><span class="cov3" title="3">{
+                i = 1
+        }</span>
+        <span class="cov5" title="8">if i &gt;= len(s) </span><span class="cov1" title="1">{
+                return false // bare "+" is invalid
+        }</span>
+        <span class="cov5" title="7">for _, c := range s[i:] </span><span class="cov8" title="33">{
+                if c &lt; '0' || c &gt; '9' </span><span class="cov3" title="4">{
+                        return false
+                }</span>
+        }
+        <span class="cov3" title="3">return true</span>
+}
+
+// ─── Forgot / Reset password (Issue 12) ──────────────────────────────────────
+
+// ForgotPassword triggers a mock password-reset notification.
+//
+// Security: ALWAYS returns the same success message regardless of whether the
+// email exists — this prevents user-enumeration attacks. The token is only
+// generated and logged when the account exists AND is active.
+//
+// Mapped to: POST /auth/forgot-password
+func (h *UserHandler) ForgotPassword(ctx context.Context, req *pb.ForgotPasswordRequest) (*pb.ForgotPasswordResponse, error) <span class="cov3" title="3">{
+        const safeReply = "If your email is registered in our system, you will receive a password reset link."
+
+        user, err := h.querier.GetUserByEmail(ctx, req.Email)
+        if err != nil </span><span class="cov1" title="1">{
+                // sql.ErrNoRows or any other DB error — swallow and return safe reply.
+                return &amp;pb.ForgotPasswordResponse{Message: safeReply}, nil
+        }</span>
+
+        // Only generate a token for active accounts; inactive accounts are silently
+        // skipped (same safe reply — no information leaked).
+        <span class="cov2" title="2">if user.IsActive </span><span class="cov1" title="1">{
+                token, err := utils.GenerateResetToken(req.Email, h.activationSecret)
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Printf("[forgot-password] failed to generate reset token for %s: %v", req.Email, err)
+                }</span> else<span class="cov1" title="1"> if err := h.publisher.Publish(utils.EmailEvent{
+                        Type:  "RESET",
+                        Email: req.Email,
+                        Token: token,
+                }); err != nil </span><span class="cov0" title="0">{
+                        log.Printf("[forgot-password] failed to publish reset event for %s: %v", req.Email, err)
+                }</span>
+        }
+
+        <span class="cov2" title="2">return &amp;pb.ForgotPasswordResponse{Message: safeReply}, nil</span>
+}
+
+// ResetPassword consumes a password-reset JWT and writes the new password.
+//
+// Flow (no auth header required — the reset token IS the credential):
+//  1. Validate new password length (min 8 characters).
+//  2. Verify the reset JWT — Unauthenticated if invalid or expired.
+//  3. Hash the new password with bcrypt.
+//  4. Persist via UpdateUserPassword.
+//
+// Mapped to: POST /auth/reset-password
+func (h *UserHandler) ResetPassword(ctx context.Context, req *pb.ResetPasswordRequest) (*pb.ResetPasswordResponse, error) <span class="cov3" title="4">{
+        // ── 1. Password validation ────────────────────────────────────────────────
+        if len(req.NewPassword) &lt; 8 </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.InvalidArgument, "password must be at least 8 characters")
+        }</span>
+
+        // ── 2. Verify reset token ─────────────────────────────────────────────────
+        <span class="cov3" title="3">email, err := utils.VerifyResetToken(req.Token, h.activationSecret)
+        if err != nil </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.Unauthenticated, "invalid or expired reset token")
+        }</span>
+
+        // ── 3. Hash password ──────────────────────────────────────────────────────
+        <span class="cov2" title="2">hashed, err := utils.HashPassword(req.NewPassword)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, status.Errorf(codes.Internal, "failed to hash password")
+        }</span>
+
+        // ── 4. Persist ────────────────────────────────────────────────────────────
+        <span class="cov2" title="2">if err := h.querier.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{
+                PasswordHash: hashed,
+                Email:        email,
+        }); err != nil </span><span class="cov1" title="1">{
+                return nil, status.Errorf(codes.Internal, "failed to update password")
+        }</span>
+
+        // ── 5. Notify user of the password change ─────────────────────────────────
+        // Fire-and-forget: the password is already committed, so a messaging failure
+        // must not surface as a gRPC error to the caller.
+        <span class="cov1" title="1">if err := h.publisher.Publish(utils.EmailEvent{
+                Type:  "CONFIRMATION",
+                Email: email,
+                Token: "",
+        }); err != nil </span><span class="cov0" title="0">{
+                log.Printf("[reset-password] failed to publish confirmation event for %s: %v", email, err)
+        }</span>
+
+        <span class="cov1" title="1">return &amp;pb.ResetPasswordResponse{Message: "Password reset successfully."}, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file7" style="display: none">// Package handler wires HTTP routes to use-case logic.
+// Clean Architecture: interface / delivery layer.
+package handler
+
+import (
+        "errors"
+        "net/http"
+
+        "banka-backend/services/user-service/internal/domain"
+
+        "github.com/gin-gonic/gin"
+)
+
+// UserHTTPHandler holds the router group and service dependency.
+type UserHTTPHandler struct {
+        svc domain.UserService
+}
+
+// NewUserHTTPHandler registers all user routes on the provided router group.
+func NewUserHTTPHandler(rg *gin.RouterGroup, svc domain.UserService) <span class="cov10" title="12">{
+        h := &amp;UserHTTPHandler{svc: svc}
+
+        rg.POST("/register", h.Register)
+        rg.POST("/login", h.Login)
+        rg.GET("/:id", h.GetUser)
+}</span>
+
+// ─── handlers ─────────────────────────────────────────────────────────────────
+
+// Register godoc
+// POST /api/v1/users/register
+func (h *UserHTTPHandler) Register(c *gin.Context) <span class="cov6" title="5">{
+        var req struct {
+                Name     string `json:"name"     binding:"required"`
+                Email    string `json:"email"    binding:"required,email"`
+                Password string `json:"password" binding:"required,min=8"`
+        }
+        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov3" title="2">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        <span class="cov4" title="3">user, err := h.svc.Register(req.Name, req.Email, req.Password)
+        if err != nil </span><span class="cov3" title="2">{
+                if errors.Is(err, domain.ErrEmailTaken) </span><span class="cov1" title="1">{
+                        c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+                        return
+                }</span>
+                <span class="cov1" title="1">c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+                return</span>
+        }
+
+        <span class="cov1" title="1">c.JSON(http.StatusCreated, gin.H{"user": user})</span>
+}
+
+// Login godoc
+// POST /api/v1/users/login
+func (h *UserHTTPHandler) Login(c *gin.Context) <span class="cov6" title="4">{
+        var req struct {
+                Email    string `json:"email"    binding:"required,email"`
+                Password string `json:"password" binding:"required"`
+        }
+        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov1" title="1">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        <span class="cov4" title="3">access, refresh, err := h.svc.Login(req.Email, req.Password)
+        if err != nil </span><span class="cov3" title="2">{
+                if errors.Is(err, domain.ErrInvalidCredentials) </span><span class="cov1" title="1">{
+                        c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+                        return
+                }</span>
+                <span class="cov1" title="1">c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+                return</span>
+        }
+
+        <span class="cov1" title="1">c.JSON(http.StatusOK, gin.H{
+                "access_token":  access,
+                "refresh_token": refresh,
+        })</span>
+}
+
+// GetUser godoc
+// GET /api/v1/users/:id
+func (h *UserHTTPHandler) GetUser(c *gin.Context) <span class="cov4" title="3">{
+        user, err := h.svc.GetByID(c.Param("id"))
+        if err != nil </span><span class="cov3" title="2">{
+                if errors.Is(err, domain.ErrUserNotFound) </span><span class="cov1" title="1">{
+                        c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+                        return
+                }</span>
+                <span class="cov1" title="1">c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+                return</span>
+        }
+        <span class="cov1" title="1">c.JSON(http.StatusOK, gin.H{"user": user})</span>
+}
+</pre>
+		
+		<pre class="file" id="file8" style="display: none">// Package interceptor provides gRPC server-side interceptors.
+package interceptor
+
+import (
+        "context"
+        "strings"
+
+        pb "banka-backend/proto/user"
+        "banka-backend/services/user-service/internal/utils"
+
+        "google.golang.org/grpc"
+        "google.golang.org/grpc/codes"
+        "google.golang.org/grpc/metadata"
+        "google.golang.org/grpc/status"
+)
+
+// contextKey is an unexported type to prevent key collisions in context values.
+type contextKey string
+
+// claimsKey is the key under which *utils.AccessClaims is stored in the context.
+const claimsKey contextKey = "jwt_claims"
+
+// publicMethods lists RPC full-method paths that do NOT require a valid JWT.
+// Uses proto-generated constants to avoid typos and keep this in sync with the proto.
+var publicMethods = map[string]struct{}{
+        pb.UserService_HealthCheck_FullMethodName:     {},
+        pb.UserService_Login_FullMethodName:           {},
+        pb.UserService_SetPassword_FullMethodName:     {}, // activation token is the credential, no access token
+        pb.UserService_ActivateAccount_FullMethodName: {},
+        pb.UserService_RefreshToken_FullMethodName:    {}, // carries a refresh token, not an access token
+        pb.UserService_ForgotPassword_FullMethodName:  {}, // unauthenticated — only an email is provided
+        pb.UserService_ResetPassword_FullMethodName:   {}, // reset token is the credential, no access token
+}
+
+// AuthInterceptor verifies JWT access tokens on all protected RPCs.
+type AuthInterceptor struct {
+        accessSecret string
+}
+
+// NewAuthInterceptor constructs an AuthInterceptor using the given HMAC secret.
+func NewAuthInterceptor(accessSecret string) *AuthInterceptor <span class="cov10" title="13">{
+        return &amp;AuthInterceptor{accessSecret: accessSecret}
+}</span>
+
+// Unary returns a grpc.UnaryServerInterceptor that:
+//  1. Skips auth for whitelisted public methods.
+//  2. Extracts the Bearer token from the incoming "authorization" metadata header.
+//  3. Verifies the token and injects *utils.AccessClaims into the context.
+func (a *AuthInterceptor) Unary() grpc.UnaryServerInterceptor <span class="cov10" title="13">{
+        return func(
+                ctx context.Context,
+                req interface{},
+                info *grpc.UnaryServerInfo,
+                handler grpc.UnaryHandler,
+        ) (interface{}, error) </span><span class="cov10" title="13">{
+                if _, public := publicMethods[info.FullMethod]; public </span><span class="cov7" title="7">{
+                        return handler(ctx, req)
+                }</span>
+
+                <span class="cov7" title="6">claims, err := a.extractClaims(ctx)
+                if err != nil </span><span class="cov6" title="5">{
+                        return nil, err
+                }</span>
+
+                <span class="cov1" title="1">return handler(context.WithValue(ctx, claimsKey, claims), req)</span>
+        }
+}
+
+// ClaimsFromContext retrieves the access claims injected by AuthInterceptor.
+// Returns (nil, false) on public routes where no claims are present.
+func ClaimsFromContext(ctx context.Context) (*utils.AccessClaims, bool) <span class="cov3" title="2">{
+        claims, ok := ctx.Value(claimsKey).(*utils.AccessClaims)
+        return claims, ok
+}</span>
+
+// extractClaims reads and validates the Bearer token from incoming gRPC metadata.
+// gRPC-Gateway forwards the HTTP Authorization header as lowercase "authorization".
+func (a *AuthInterceptor) extractClaims(ctx context.Context) (*utils.AccessClaims, error) <span class="cov7" title="6">{
+        md, ok := metadata.FromIncomingContext(ctx)
+        if !ok </span><span class="cov1" title="1">{
+                return nil, status.Error(codes.Unauthenticated, "missing metadata")
+        }</span>
+
+        <span class="cov6" title="5">vals := md.Get("authorization")
+        if len(vals) == 0 </span><span class="cov1" title="1">{
+                return nil, status.Error(codes.Unauthenticated, "missing authorization header")
+        }</span>
+
+        <span class="cov5" title="4">raw := vals[0]
+        if !strings.HasPrefix(raw, "Bearer ") </span><span class="cov1" title="1">{
+                return nil, status.Error(codes.Unauthenticated, "authorization header must use Bearer scheme")
+        }</span>
+        <span class="cov4" title="3">tokenStr := strings.TrimPrefix(raw, "Bearer ")
+
+        claims, err := utils.VerifyToken(tokenStr, a.accessSecret)
+        if err != nil </span><span class="cov3" title="2">{
+                return nil, status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
+        }</span>
+        <span class="cov1" title="1">return claims, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file9" style="display: none">package interceptor
+
+import (
+        "context"
+
+        "banka-backend/services/user-service/internal/utils"
+)
+
+// NewContextWithClaims injects pre-built JWT access claims into ctx using the
+// same context key that the production Unary() interceptor uses.
+//
+// This is intended exclusively for unit tests where you want to simulate an
+// authenticated gRPC request without running the full interceptor chain.
+//
+// Example:
+//
+//        ctx := interceptor.NewContextWithClaims(context.Background(), &amp;utils.AccessClaims{
+//            UserType: "ADMIN",
+//        })
+func NewContextWithClaims(ctx context.Context, claims *utils.AccessClaims) context.Context <span class="cov0" title="0">{
+        return context.WithValue(ctx, claimsKey, claims)
+}</span>
+</pre>
+		
+		<pre class="file" id="file10" style="display: none">// Package service contains application use-case logic.
+// Clean Architecture: use-case layer — depends only on domain interfaces.
+package service
+
+import (
+        "banka-backend/services/user-service/internal/domain"
+        "banka-backend/services/user-service/internal/utils"
+)
+
+// userService implements domain.UserService.
+type userService struct {
+        repo          domain.UserRepository
+        accessSecret  string
+        refreshSecret string
+}
+
+// NewUserService wires dependencies via constructor injection.
+func NewUserService(repo domain.UserRepository, accessSecret, refreshSecret string) domain.UserService <span class="cov10" title="8">{
+        return &amp;userService{
+                repo:          repo,
+                accessSecret:  accessSecret,
+                refreshSecret: refreshSecret,
+        }
+}</span>
+
+// Register hashes the password, persists the user, and returns the created entity.
+func (s *userService) Register(name, email, password string) (*domain.User, error) <span class="cov5" title="3">{
+        // Check uniqueness
+        existing, _ := s.repo.FindByEmail(email)
+        if existing != nil </span><span class="cov1" title="1">{
+                return nil, domain.ErrEmailTaken
+        }</span>
+
+        <span class="cov4" title="2">hash, err := utils.HashPassword(password)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov4" title="2">user := &amp;domain.User{
+                Name:         name,
+                Email:        email,
+                PasswordHash: hash,
+        }
+        if err := s.repo.Create(user); err != nil </span><span class="cov1" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov1" title="1">return user, nil</span>
+}
+
+// Login verifies credentials and returns a JWT access/refresh token pair.
+func (s *userService) Login(email, password string) (string, string, error) <span class="cov5" title="3">{
+        user, err := s.repo.FindByEmail(email)
+        if err != nil </span><span class="cov1" title="1">{
+                return "", "", domain.ErrInvalidCredentials
+        }</span>
+
+        <span class="cov4" title="2">if err := utils.CheckPassword(password, user.PasswordHash); err != nil </span><span class="cov1" title="1">{
+                return "", "", domain.ErrInvalidCredentials
+        }</span>
+
+        // TODO(Phase 5): pass real email, user_type, and permissions once the DB
+        // query returns the full user profile.
+        <span class="cov1" title="1">access, refresh, err := utils.GenerateTokens(
+                user.ID, user.Email, "", nil,
+                s.accessSecret, s.refreshSecret,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return "", "", err
+        }</span>
+        <span class="cov1" title="1">return access, refresh, nil</span>
+}
+
+// GetByID fetches a user by their UUID.
+func (s *userService) GetByID(id string) (*domain.User, error) <span class="cov4" title="2">{
+        return s.repo.FindByID(id)
+}</span>
+</pre>
+		
+		<pre class="file" id="file11" style="display: none">// Package testutil provides shared helpers for user-service unit tests.
+// Nothing in this package is compiled into the production binary.
+package testutil
+
+import (
+        "context"
+        "time"
+
+        "github.com/golang-jwt/jwt/v5"
+        "google.golang.org/grpc/metadata"
+
+        "banka-backend/services/user-service/internal/interceptor"
+        "banka-backend/services/user-service/internal/utils"
+)
+
+// Fixed secrets used across all user-service tests. Using constants keeps
+// token generation deterministic and avoids accidental secret leakage.
+const (
+        TestAccessSecret     = "test-access-secret-32-chars-long!"
+        TestRefreshSecret    = "test-refresh-secret-32-chars-lon!"
+        TestActivationSecret = "test-activation-secret-32chars!!"
+)
+
+// AdminContext returns a context with ADMIN JWT claims pre-injected via the
+// same key the production interceptor uses. No real JWT is created or verified.
+func AdminContext() context.Context <span class="cov0" title="0">{
+        return interceptor.NewContextWithClaims(context.Background(), &amp;utils.AccessClaims{
+                Email:       "admin@test.com",
+                UserType:    "ADMIN",
+                Permissions: []string{},
+                RegisteredClaims: jwt.RegisteredClaims{
+                        Subject:   "1",
+                        IssuedAt:  jwt.NewNumericDate(time.Now()),
+                        ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+                },
+        })
+}</span>
+
+// EmployeeContext returns a context with EMPLOYEE claims + the given permission codes.
+func EmployeeContext(userID string, permissions []string) context.Context <span class="cov0" title="0">{
+        return interceptor.NewContextWithClaims(context.Background(), &amp;utils.AccessClaims{
+                Email:       "employee@test.com",
+                UserType:    "EMPLOYEE",
+                Permissions: permissions,
+                RegisteredClaims: jwt.RegisteredClaims{
+                        Subject:   userID,
+                        IssuedAt:  jwt.NewNumericDate(time.Now()),
+                        ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+                },
+        })
+}</span>
+
+// UnauthenticatedContext returns a plain background context with no claims.
+// Use this to test handlers that should reject unauthenticated callers.
+func UnauthenticatedContext() context.Context <span class="cov0" title="0">{
+        return context.Background()
+}</span>
+
+// MakeAccessToken signs a real access token with TestAccessSecret.
+// Useful when testing the auth interceptor itself, where a real JWT is needed.
+func MakeAccessToken(userID, email, userType string, permissions []string) string <span class="cov0" title="0">{
+        token, _ := utils.GenerateAccessToken(userID, email, userType, permissions, TestAccessSecret)
+        return token
+}</span>
+
+// MakeActivationToken signs a real activation token with TestActivationSecret.
+func MakeActivationToken(email string) string <span class="cov0" title="0">{
+        token, _ := utils.GenerateActivationToken(email, TestActivationSecret)
+        return token
+}</span>
+
+// MakeResetToken signs a real password-reset token with TestActivationSecret.
+func MakeResetToken(email string) string <span class="cov0" title="0">{
+        token, _ := utils.GenerateResetToken(email, TestActivationSecret)
+        return token
+}</span>
+
+// GRPCIncomingContext creates a gRPC-style incoming context with an
+// Authorization: Bearer &lt;token&gt; metadata header. Used for interceptor tests.
+func GRPCIncomingContext(token string) context.Context <span class="cov0" title="0">{
+        md := metadata.Pairs("authorization", "Bearer "+token)
+        return metadata.NewIncomingContext(context.Background(), md)
+}</span>
+</pre>
+		
+		<pre class="file" id="file12" style="display: none">// Package utils — JWT generation and verification.
+package utils
+
+import (
+        "errors"
+        "time"
+
+        "github.com/golang-jwt/jwt/v5"
+)
+
+// AccessClaims is the JWT payload for access tokens.
+//
+// Exact JSON shape:
+//
+//        { "sub": "&lt;id&gt;", "email": "&lt;email&gt;", "user_type": "&lt;type&gt;",
+//          "permissions": [...], "iat": &lt;unix&gt;, "exp": &lt;unix&gt; }
+//
+// token_type is intentionally absent on valid access tokens; its presence as
+// "refresh" is treated as misuse and rejected by VerifyToken.
+type AccessClaims struct {
+        Email       string   `json:"email"`
+        UserType    string   `json:"user_type"`
+        Permissions []string `json:"permissions"`
+        // TokenType is populated only when a refresh token is accidentally parsed
+        // into this struct. VerifyToken rejects any non-empty "refresh" value.
+        TokenType string `json:"token_type,omitempty"`
+        jwt.RegisteredClaims
+}
+
+// RefreshClaims is the JWT payload for refresh tokens.
+//
+// Exact JSON shape:
+//
+//        { "sub": "&lt;id&gt;", "iat": &lt;unix&gt;, "exp": &lt;unix&gt;, "token_type": "refresh" }
+type RefreshClaims struct {
+        TokenType string `json:"token_type"`
+        jwt.RegisteredClaims
+}
+
+// GenerateTokens returns a signed access token (15 min) and a signed refresh
+// token (7 days). Access and refresh tokens are signed with separate secrets.
+func GenerateTokens(
+        userID, email, userType string,
+        permissions []string,
+        accessSecret, refreshSecret string,
+) (accessToken, refreshToken string, err error) <span class="cov10" title="8">{
+        now := time.Now()
+
+        accessClaims := &amp;AccessClaims{
+                Email:       email,
+                UserType:    userType,
+                Permissions: permissions,
+                RegisteredClaims: jwt.RegisteredClaims{
+                        Subject:   userID,
+                        IssuedAt:  jwt.NewNumericDate(now),
+                        ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+                },
+        }
+        accessToken, err = jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims).
+                SignedString([]byte(accessSecret))
+        if err != nil </span><span class="cov0" title="0">{
+                return
+        }</span>
+
+        <span class="cov10" title="8">refreshClaims := &amp;RefreshClaims{
+                TokenType: "refresh",
+                RegisteredClaims: jwt.RegisteredClaims{
+                        Subject:   userID,
+                        IssuedAt:  jwt.NewNumericDate(now),
+                        ExpiresAt: jwt.NewNumericDate(now.Add(7 * 24 * time.Hour)),
+                },
+        }
+        refreshToken, err = jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims).
+                SignedString([]byte(refreshSecret))
+        return</span>
+}
+
+// GenerateAccessToken signs a new access token (15 min) without touching the
+// refresh token. Used exclusively by the RefreshToken handler.
+func GenerateAccessToken(
+        userID, email, userType string,
+        permissions []string,
+        accessSecret string,
+) (string, error) <span class="cov1" title="1">{
+        now := time.Now()
+        claims := &amp;AccessClaims{
+                Email:       email,
+                UserType:    userType,
+                Permissions: permissions,
+                RegisteredClaims: jwt.RegisteredClaims{
+                        Subject:   userID,
+                        IssuedAt:  jwt.NewNumericDate(now),
+                        ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+                },
+        }
+        return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(accessSecret))
+}</span>
+
+// VerifyRefreshToken parses and validates a refresh token string.
+//
+// It checks:
+//  1. Signature is valid HMAC-SHA256 using secret.
+//  2. Token is not expired.
+//  3. token_type IS "refresh" (rejects plain access tokens sent here by mistake).
+func VerifyRefreshToken(tokenStr, secret string) (*RefreshClaims, error) <span class="cov8" title="6">{
+        token, err := jwt.ParseWithClaims(tokenStr, &amp;RefreshClaims{}, func(t *jwt.Token) (interface{}, error) </span><span class="cov8" title="6">{
+                if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok </span><span class="cov1" title="1">{
+                        return nil, errors.New("unexpected signing method")
+                }</span>
+                <span class="cov7" title="5">return []byte(secret), nil</span>
+        })
+        <span class="cov8" title="6">if err != nil </span><span class="cov5" title="3">{
+                return nil, err
+        }</span>
+
+        <span class="cov5" title="3">claims, ok := token.Claims.(*RefreshClaims)
+        if !ok || !token.Valid </span><span class="cov0" title="0">{
+                return nil, errors.New("invalid token")
+        }</span>
+        <span class="cov5" title="3">if claims.TokenType != "refresh" </span><span class="cov1" title="1">{
+                return nil, errors.New("not a refresh token")
+        }</span>
+        <span class="cov4" title="2">return claims, nil</span>
+}
+
+// ActivationClaims is the JWT payload for account-activation tokens.
+//
+// Exact JSON shape:
+//
+//        { "sub": "&lt;email&gt;", "token_type": "activation", "iat": &lt;unix&gt;, "exp": &lt;unix&gt; }
+type ActivationClaims struct {
+        TokenType string `json:"token_type"`
+        jwt.RegisteredClaims
+}
+
+// GenerateActivationToken issues a short-lived activation token (24 h).
+// The subject is the user's email address.
+func GenerateActivationToken(email, secret string) (string, error) <span class="cov5" title="3">{
+        now := time.Now()
+        claims := &amp;ActivationClaims{
+                TokenType: "activation",
+                RegisteredClaims: jwt.RegisteredClaims{
+                        Subject:   email,
+                        IssuedAt:  jwt.NewNumericDate(now),
+                        ExpiresAt: jwt.NewNumericDate(now.Add(24 * time.Hour)),
+                },
+        }
+        return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+}</span>
+
+// VerifyActivationToken parses and validates an activation token string.
+//
+// It checks:
+//  1. Signature is valid HMAC-SHA256 using secret.
+//  2. Token is not expired.
+//  3. token_type IS "activation".
+//
+// Returns the email (sub claim) on success.
+func VerifyActivationToken(tokenStr, secret string) (string, error) <span class="cov7" title="4">{
+        token, err := jwt.ParseWithClaims(tokenStr, &amp;ActivationClaims{}, func(t *jwt.Token) (interface{}, error) </span><span class="cov7" title="4">{
+                if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok </span><span class="cov1" title="1">{
+                        return nil, errors.New("unexpected signing method")
+                }</span>
+                <span class="cov5" title="3">return []byte(secret), nil</span>
+        })
+        <span class="cov7" title="4">if err != nil </span><span class="cov4" title="2">{
+                return "", err
+        }</span>
+
+        <span class="cov4" title="2">claims, ok := token.Claims.(*ActivationClaims)
+        if !ok || !token.Valid </span><span class="cov0" title="0">{
+                return "", errors.New("invalid token")
+        }</span>
+        <span class="cov4" title="2">if claims.TokenType != "activation" </span><span class="cov1" title="1">{
+                return "", errors.New("not an activation token")
+        }</span>
+        <span class="cov1" title="1">return claims.Subject, nil</span>
+}
+
+// ResetClaims is the JWT payload for password-reset tokens.
+//
+// Exact JSON shape:
+//
+//        { "sub": "&lt;email&gt;", "token_type": "reset", "iat": &lt;unix&gt;, "exp": &lt;unix&gt; }
+type ResetClaims struct {
+        TokenType string `json:"token_type"`
+        jwt.RegisteredClaims
+}
+
+// GenerateResetToken issues a short-lived password-reset token (15 min).
+// The subject is the user's email address.
+func GenerateResetToken(email, secret string) (string, error) <span class="cov5" title="3">{
+        now := time.Now()
+        claims := &amp;ResetClaims{
+                TokenType: "reset",
+                RegisteredClaims: jwt.RegisteredClaims{
+                        Subject:   email,
+                        IssuedAt:  jwt.NewNumericDate(now),
+                        ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+                },
+        }
+        return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+}</span>
+
+// VerifyResetToken parses and validates a password-reset token string.
+//
+// It checks:
+//  1. Signature is valid HMAC-SHA256 using secret.
+//  2. Token is not expired.
+//  3. token_type IS "reset".
+//
+// Returns the email (sub claim) on success.
+func VerifyResetToken(tokenStr, secret string) (string, error) <span class="cov7" title="4">{
+        token, err := jwt.ParseWithClaims(tokenStr, &amp;ResetClaims{}, func(t *jwt.Token) (interface{}, error) </span><span class="cov7" title="4">{
+                if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok </span><span class="cov1" title="1">{
+                        return nil, errors.New("unexpected signing method")
+                }</span>
+                <span class="cov5" title="3">return []byte(secret), nil</span>
+        })
+        <span class="cov7" title="4">if err != nil </span><span class="cov4" title="2">{
+                return "", err
+        }</span>
+
+        <span class="cov4" title="2">claims, ok := token.Claims.(*ResetClaims)
+        if !ok || !token.Valid </span><span class="cov0" title="0">{
+                return "", errors.New("invalid token")
+        }</span>
+        <span class="cov4" title="2">if claims.TokenType != "reset" </span><span class="cov1" title="1">{
+                return "", errors.New("not a reset token")
+        }</span>
+        <span class="cov1" title="1">return claims.Subject, nil</span>
+}
+
+// VerifyToken parses and validates an access token string.
+//
+// It checks:
+//  1. Signature is valid HMAC-SHA256 using secret.
+//  2. Token is not expired.
+//  3. token_type is NOT "refresh" (prevents refresh tokens being used as access tokens).
+func VerifyToken(tokenStr, secret string) (*AccessClaims, error) <span class="cov10" title="8">{
+        token, err := jwt.ParseWithClaims(tokenStr, &amp;AccessClaims{}, func(t *jwt.Token) (interface{}, error) </span><span class="cov9" title="7">{
+                if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok </span><span class="cov1" title="1">{
+                        return nil, errors.New("unexpected signing method")
+                }</span>
+                <span class="cov8" title="6">return []byte(secret), nil</span>
+        })
+        <span class="cov10" title="8">if err != nil </span><span class="cov7" title="4">{
+                return nil, err
+        }</span>
+
+        <span class="cov7" title="4">claims, ok := token.Claims.(*AccessClaims)
+        if !ok || !token.Valid </span><span class="cov0" title="0">{
+                return nil, errors.New("invalid token")
+        }</span>
+        <span class="cov7" title="4">if claims.TokenType == "refresh" </span><span class="cov1" title="1">{
+                return nil, errors.New("refresh token cannot be used as an access token")
+        }</span>
+        <span class="cov5" title="3">return claims, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file13" style="display: none">// Package utils contains stateless helper functions shared across the service.
+package utils
+
+import "golang.org/x/crypto/bcrypt"
+
+const bcryptCost = 12
+
+// HashPassword salts and hashes a plaintext password using bcrypt.
+func HashPassword(plain string) (string, error) <span class="cov10" title="10">{
+        hash, err := bcrypt.GenerateFromPassword([]byte(plain), bcryptCost)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+        <span class="cov10" title="10">return string(hash), nil</span>
+}
+
+// CheckPassword returns nil when plain matches the stored bcrypt hash.
+func CheckPassword(plain, hash string) error <span class="cov9" title="8">{
+        return bcrypt.CompareHashAndPassword([]byte(hash), []byte(plain))
+}</span>
+</pre>
+		
+		<pre class="file" id="file14" style="display: none">// Package utils — RabbitMQ publisher for async email notifications.
+package utils
+
+import (
+        "encoding/json"
+
+        amqp "github.com/rabbitmq/amqp091-go"
+)
+
+const emailQueue = "email_notifications"
+
+// EmailEvent is the message payload published to the email_notifications queue.
+// The Notification Service consumes this and dispatches the appropriate email.
+type EmailEvent struct {
+        Type  string `json:"type"`  // "ACTIVATION" | "RESET" | "CONFIRMATION"
+        Email string `json:"email"` // recipient
+        Token string `json:"token"` // JWT for the action link
+}
+
+// EmailPublisher abstracts RabbitMQ message publishing for testability.
+// The production implementation is AMQPPublisher; tests inject a mock.
+type EmailPublisher interface {
+        Publish(event EmailEvent) error
+}
+
+// AMQPPublisher is the production RabbitMQ publisher.
+// It dials a new connection per Publish call — suitable for low-frequency
+// fire-and-forget notifications.
+type AMQPPublisher struct {
+        amqpURL string
+}
+
+// NewAMQPPublisher creates a real RabbitMQ publisher bound to amqpURL.
+func NewAMQPPublisher(amqpURL string) *AMQPPublisher <span class="cov0" title="0">{
+        return &amp;AMQPPublisher{amqpURL: amqpURL}
+}</span>
+
+// Publish delegates to the package-level PublishEmailEvent function.
+func (p *AMQPPublisher) Publish(event EmailEvent) error <span class="cov0" title="0">{
+        return PublishEmailEvent(p.amqpURL, event)
+}</span>
+
+// PublishEmailEvent dials RabbitMQ, declares the durable queue, and publishes
+// a single JSON-encoded EmailEvent. Connections and channels are closed via
+// defer so resources are always released, even on error paths.
+func PublishEmailEvent(amqpURL string, event EmailEvent) error <span class="cov0" title="0">{
+        conn, err := amqp.Dial(amqpURL)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">defer conn.Close()
+
+        ch, err := conn.Channel()
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">defer ch.Close()
+
+        // Declare the queue as durable so messages survive a broker restart.
+        _, err = ch.QueueDeclare(
+                emailQueue,
+                true,  // durable
+                false, // auto-delete
+                false, // exclusive
+                false, // no-wait
+                nil,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">body, err := json.Marshal(event)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">return ch.Publish(
+                "",         // default exchange
+                emailQueue, // routing key = queue name
+                false,      // mandatory
+                false,      // immediate
+                amqp.Publishing{
+                        ContentType:  "application/json",
+                        DeliveryMode: amqp.Persistent, // survive broker restart
+                        Body:         body,
+                },
+        )</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

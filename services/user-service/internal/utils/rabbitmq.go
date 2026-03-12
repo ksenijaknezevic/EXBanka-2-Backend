@@ -12,9 +12,32 @@ const emailQueue = "email_notifications"
 // EmailEvent is the message payload published to the email_notifications queue.
 // The Notification Service consumes this and dispatches the appropriate email.
 type EmailEvent struct {
-	Type  string `json:"type"`  // "ACTIVATION" | "RESET"
+	Type  string `json:"type"`  // "ACTIVATION" | "RESET" | "CONFIRMATION"
 	Email string `json:"email"` // recipient
 	Token string `json:"token"` // JWT for the action link
+}
+
+// EmailPublisher abstracts RabbitMQ message publishing for testability.
+// The production implementation is AMQPPublisher; tests inject a mock.
+type EmailPublisher interface {
+	Publish(event EmailEvent) error
+}
+
+// AMQPPublisher is the production RabbitMQ publisher.
+// It dials a new connection per Publish call — suitable for low-frequency
+// fire-and-forget notifications.
+type AMQPPublisher struct {
+	amqpURL string
+}
+
+// NewAMQPPublisher creates a real RabbitMQ publisher bound to amqpURL.
+func NewAMQPPublisher(amqpURL string) *AMQPPublisher {
+	return &AMQPPublisher{amqpURL: amqpURL}
+}
+
+// Publish delegates to the package-level PublishEmailEvent function.
+func (p *AMQPPublisher) Publish(event EmailEvent) error {
+	return PublishEmailEvent(p.amqpURL, event)
 }
 
 // PublishEmailEvent dials RabbitMQ, declares the durable queue, and publishes

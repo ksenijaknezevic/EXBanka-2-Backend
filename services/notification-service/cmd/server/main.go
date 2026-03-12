@@ -15,6 +15,7 @@ import (
 
 	"banka-backend/services/notification-service/internal/config"
 	"banka-backend/services/notification-service/internal/service"
+	"banka-backend/services/notification-service/internal/smtp"
 	"banka-backend/services/notification-service/internal/transport"
 )
 
@@ -25,7 +26,7 @@ func main() {
 	}
 	cfg := config.LoadConfig()
 
-	emailSvc := service.NewEmailService(cfg)
+	emailSvc := service.NewEmailService(cfg, smtp.NewRealSender(cfg))
 
 	go transport.StartConsumer(cfg, emailSvc)
 

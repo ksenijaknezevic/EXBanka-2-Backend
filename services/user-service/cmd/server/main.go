@@ -23,10 +23,11 @@ import (
 
 	pb "banka-backend/proto/user"
 	"banka-backend/services/user-service/internal/config"
+	dbsqlc "banka-backend/services/user-service/internal/database/sqlc"
 	userhandler "banka-backend/services/user-service/internal/handler"
 	"banka-backend/services/user-service/internal/interceptor"
 	"banka-backend/services/user-service/internal/transport"
-	dbsqlc "banka-backend/services/user-service/internal/database/sqlc"
+	"banka-backend/services/user-service/internal/utils"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers "pgx" driver for database/sql
@@ -74,7 +75,7 @@ func main() {
 	authInterceptor := interceptor.NewAuthInterceptor(cfg.JWTAccessSecret)
 	grpcSrv := transport.NewGRPCServer(cfg.GRPCAddr, authInterceptor.Unary())
 
-	handler := userhandler.NewUserHandler(querier, sqlDB, cfg.JWTAccessSecret, cfg.JWTRefreshSecret, cfg.JWTActivationSecret, cfg.RabbitMQURL)
+	handler := userhandler.NewUserHandler(querier, sqlDB, cfg.JWTAccessSecret, cfg.JWTRefreshSecret, cfg.JWTActivationSecret, utils.NewAMQPPublisher(cfg.RabbitMQURL))
 	pb.RegisterUserServiceServer(grpcSrv.Server(), handler)
 
 	// ── 4. gRPC-Gateway: dial the local gRPC server ──────────────────────────

@@ -1,0 +1,67 @@
+# .mockery.yaml — mockery v2 configuration
+# Run: mockery --config .mockery.yaml
+#
+# Install mockery:
+#   go install github.com/vektra/mockery/v2@latest
+#
+# All generated mocks use testify/mock and include a compile-time interface
+# assertion (var _ Interface = (*MockType)(nil)).
+
+with-expecter: false
+inpackage: false
+log-level: warn
+
+packages:
+  # ── user-service ────────────────────────────────────────────────────────────
+
+  banka-backend/services/user-service/internal/database/sqlc:
+    config:
+      dir: "services/user-service/mocks"
+      outpkg: mocks
+      filename: "mock_querier.go"
+      mockname: "MockQuerier"
+    interfaces:
+      Querier:
+
+  banka-backend/services/user-service/internal/domain:
+    config:
+      dir: "services/user-service/mocks"
+      outpkg: mocks
+    interfaces:
+      UserRepository:
+        config:
+          filename: "mock_user_repository.go"
+          mockname: "MockUserRepository"
+      UserService:
+        config:
+          filename: "mock_user_service.go"
+          mockname: "MockUserService"
+
+  banka-backend/services/user-service/internal/utils:
+    config:
+      dir: "services/user-service/mocks"
+      outpkg: mocks
+      filename: "mock_email_publisher.go"
+      mockname: "MockEmailPublisher"
+    interfaces:
+      EmailPublisher:
+
+  # ── notification-service ────────────────────────────────────────────────────
+
+  banka-backend/services/notification-service/internal/domain:
+    config:
+      dir: "services/notification-service/mocks"
+      outpkg: mocks
+      filename: "mock_notification_service.go"
+      mockname: "MockNotificationService"
+    interfaces:
+      NotificationService:
+
+  banka-backend/services/notification-service/internal/smtp:
+    config:
+      dir: "services/notification-service/mocks"
+      outpkg: mocks
+      filename: "mock_smtp_sender.go"
+      mockname: "MockSMTPSender"
+    interfaces:
+      Sender:

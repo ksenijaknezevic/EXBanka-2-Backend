@@ -32,24 +32,25 @@ import (
 // are added to the proto.
 type UserHandler struct {
 	pb.UnimplementedUserServiceServer
-	querier          db.Querier // injected sqlc query layer (non-transactional reads)
-	sqlDB            *sql.DB    // raw connection pool — used only to open transactions
-	accessSecret     string     // HMAC secret for signing access tokens
-	refreshSecret    string     // HMAC secret for signing refresh tokens
-	activationSecret string     // HMAC secret for signing activation/reset tokens
-	rabbitMQURL      string     // AMQP connection URL for the email-notification queue
+	querier          db.Querier           // injected sqlc query layer (non-transactional reads)
+	sqlDB            *sql.DB              // raw connection pool — used only to open transactions
+	accessSecret     string               // HMAC secret for signing access tokens
+	refreshSecret    string               // HMAC secret for signing refresh tokens
+	activationSecret string               // HMAC secret for signing activation/reset tokens
+	publisher        utils.EmailPublisher // abstracts RabbitMQ publishing for testability
 }
 
 // NewUserHandler constructs a UserHandler.
 // sqlDB is required for handlers that need multi-statement transactions.
-func NewUserHandler(q db.Querier, sqlDB *sql.DB, accessSecret, refreshSecret, activationSecret, rabbitMQURL string) *UserHandler {
+// publisher handles async email event dispatch; inject utils.NewAMQPPublisher in production.
+func NewUserHandler(q db.Querier, sqlDB *sql.DB, accessSecret, refreshSecret, activationSecret string, publisher utils.EmailPublisher) *UserHandler {
 	return &UserHandler{
 		querier:          q,
 		sqlDB:            sqlDB,
 		accessSecret:     accessSecret,
 		refreshSecret:    refreshSecret,
 		activationSecret: activationSecret,
-		rabbitMQURL:      rabbitMQURL,
+		publisher:        publisher,
 	}
 }
 
@@ -193,7 +194,7 @@ func (h *UserHandler) CreateEmployee(ctx context.Context, req *pb.CreateEmployee
 	token, err := utils.GenerateActivationToken(req.Email, h.activationSecret)
 	if err != nil {
 		log.Printf("[create-employee] failed to generate activation token for %s: %v", req.Email, err)
-	} else if err := utils.PublishEmailEvent(h.rabbitMQURL, utils.EmailEvent{
+	} else if err := h.publisher.Publish(utils.EmailEvent{
 		Type:  "ACTIVATION",
 		Email: req.Email,
 		Token: token,
@@ -535,7 +536,7 @@ func (h *UserHandler) ActivateAccount(ctx context.Context, req *pb.ActivateAccou
 	// ── 7. Send confirmation email ────────────────────────────────────────────
 	// Fire-and-forget: password is already committed, messaging failure must not
 	// surface as a gRPC error — the account is activated regardless.
-	if err := utils.PublishEmailEvent(h.rabbitMQURL, utils.EmailEvent{
+	if err := h.publisher.Publish(utils.EmailEvent{
 		Type:  "CONFIRMATION",
 		Email: email,
 		Token: "",
@@ -999,7 +1000,7 @@ func (h *UserHandler) ForgotPassword(ctx context.Context, req *pb.ForgotPassword
 		token, err := utils.GenerateResetToken(req.Email, h.activationSecret)
 		if err != nil {
 			log.Printf("[forgot-password] failed to generate reset token for %s: %v", req.Email, err)
-		} else if err := utils.PublishEmailEvent(h.rabbitMQURL, utils.EmailEvent{
+		} else if err := h.publisher.Publish(utils.EmailEvent{
 			Type:  "RESET",
 			Email: req.Email,
 			Token: token,
@@ -1049,7 +1050,7 @@ func (h *UserHandler) ResetPassword(ctx context.Context, req *pb.ResetPasswordRe
 	// ── 5. Notify user of the password change ─────────────────────────────────
 	// Fire-and-forget: the password is already committed, so a messaging failure
 	// must not surface as a gRPC error to the caller.
-	if err := utils.PublishEmailEvent(h.rabbitMQURL, utils.EmailEvent{
+	if err := h.publisher.Publish(utils.EmailEvent{
 		Type:  "CONFIRMATION",
 		Email: email,
 		Token: "",

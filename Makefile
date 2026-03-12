@@ -1,4 +1,5 @@
-.PHONY: proto tidy build-user build-notif docker-up docker-down
+.PHONY: proto tidy build-user build-notif build-all docker-up docker-down \
+        test test-coverage test-coverage-filtered generate-mocks
 
 # ─── Proto generation ────────────────────────────────────────────────────────
 # Requires: protoc, protoc-gen-go, protoc-gen-go-grpc
@@ -20,6 +21,20 @@ proto:
 # ─── Go module ───────────────────────────────────────────────────────────────
 tidy:
 	go mod tidy
+
+# ─── Testing ───────────────────────────────────────────────────────────────
+
+# Run all unit tests
+test:
+	go test ./services/... -v -count=1
+
+# Run tests with coverage (filtered) and generate HTML report
+coverage:
+	bash scripts/coverage.sh
+
+# Regenerate mocks
+generate-mocks:
+	mockery --config .mockery.yaml
 
 # ─── Local builds ────────────────────────────────────────────────────────────
 build-user:
