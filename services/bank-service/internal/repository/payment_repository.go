@@ -415,6 +415,13 @@ func (r *paymentRepository) CreateTransferIntent(ctx context.Context, input doma
 		}
 		actionID = action.ID
 
+		// Za konverziju valuta, krajnji_iznos čuva iznos koji se upisuje primaocu.
+		var krajnjiIznos *float64
+		if input.ConvertedIznos > 0 && input.ConvertedIznos != input.Iznos {
+			v := input.ConvertedIznos
+			krajnjiIznos = &v
+		}
+
 		intent := &paymentIntentModel{
 			IdempotencyKey:     input.IdempotencyKey,
 			BrojNaloga:         brojNaloga,
@@ -425,6 +432,7 @@ func (r *paymentRepository) CreateTransferIntent(ctx context.Context, input doma
 			BrojRacunaPrimaoca: recipientAccount.BrojRacuna,
 			NazivPrimaoca:      "Interni prenos",
 			Iznos:              input.Iznos,
+			KrajnjiIznos:       krajnjiIznos,
 			Provizija:          0,
 			Valuta:             payerAccount.ValutaOznaka,
 			SvrhaPlacanja:      input.SvrhaPlacanja,
@@ -618,19 +626,24 @@ func (r *paymentRepository) VerifyAndExecute(ctx context.Context, input domain.V
 		}
 
 		// 11. Ako je interni prenos, uplati na račun primaoca.
+		// Za konverziju valuta, krajnji_iznos sadrži iznos koji se upisuje primaocu.
+		creditAmount := intent.Iznos
+		if intent.KrajnjiIznos != nil && *intent.KrajnjiIznos > 0 && *intent.KrajnjiIznos != intent.Iznos {
+			creditAmount = *intent.KrajnjiIznos
+		}
 		if intent.RacunPrimaocaID != nil && recipientIdx >= 0 {
 			if err := tx.Exec(`
 				UPDATE core_banking.racun
 				SET stanje_racuna = stanje_racuna + ?
 				WHERE id = ? AND status = 'AKTIVAN'
-			`, intent.Iznos, *intent.RacunPrimaocaID).Error; err != nil {
+			`, creditAmount, *intent.RacunPrimaocaID).Error; err != nil {
 				return fmt.Errorf("credit primaoca: %w", err)
 			}
 
 			txUlaz := &transakcijaModel{
 				RacunID:          *intent.RacunPrimaocaID,
 				TipTransakcije:   "UPLATA",
-				Iznos:            intent.Iznos,
+				Iznos:            creditAmount,
 				Opis:             fmt.Sprintf("Prenos %s — %s", intent.BrojNaloga, intent.SvrhaPlacanja),
 				VremeIzvrsavanja: now,
 				Status:           "IZVRSEN",
@@ -641,7 +654,7 @@ func (r *paymentRepository) VerifyAndExecute(ctx context.Context, input domain.V
 		}
 
 		// 12. Ažuriraj payment_intent na REALIZOVANO.
-		krajnjiIznos := intent.Iznos
+		krajnjiIznos := creditAmount
 		if err := tx.Model(&paymentIntentModel{}).
 			Where("id = ?", intent.ID).
 			Updates(map[string]interface{}{

@@ -96,6 +96,7 @@ type CreateTransferIntentInput struct {
 	RacunPlatioceID   int64
 	RacunPrimaocaID   int64
 	Iznos             float64
+	ConvertedIznos    float64 // iznos koji se upisuje na račun primaoca (za konverziju valuta; 0 = isti kao Iznos)
 	SvrhaPlacanja     string
 	InitiatedByUserID int64
 }

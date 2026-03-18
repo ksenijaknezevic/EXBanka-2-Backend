@@ -80,6 +80,7 @@ func main() {
 
 	bankHandler := handler.NewBankHandler(currencyService, delatnostService, accountService, paymentService)
 	receiptHandler := handler.NewPaymentReceiptHandler(paymentService, cfg.JWTAccessSecret)
+	exchangeHandler := handler.NewExchangeTransferHandler(paymentService, cfg.JWTAccessSecret)
 
 	// ── 4. Auth interceptor ──────────────────────────────────────────────────
 	// Sve rute zahtevaju validan JWT access token osim gRPC health check-a.
@@ -116,10 +117,11 @@ func main() {
 		log.Fatalf("[gateway] register handler client: %v", err)
 	}
 
-	// Kombinovani HTTP mux: gRPC-Gateway + direktni HTTP handleri (PDF potvrde).
+	// Kombinovani HTTP mux: gRPC-Gateway + direktni HTTP handleri (PDF potvrde, konverzija valuta).
 	httpMux := http.NewServeMux()
-	httpMux.Handle("/bank/payments/", receiptHandler) // GET /bank/payments/{id}/receipt
-	httpMux.Handle("/", gwMux)                         // sve ostalo → gRPC-Gateway
+	httpMux.Handle("/bank/payments/", receiptHandler)                         // GET /bank/payments/{id}/receipt
+	httpMux.Handle("/bank/client/exchange-transfers", exchangeHandler)        // POST /bank/client/exchange-transfers
+	httpMux.Handle("/", gwMux)                                                // sve ostalo → gRPC-Gateway
 
 	gatewaySrv := &http.Server{
 		Addr:         cfg.HTTPAddr,
