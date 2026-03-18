@@ -297,6 +297,14 @@ message GetPaymentDetailRequest {
   int64 id = 1;
 }
 
+// ─── Menjačnica ───────────────────────────────────────────────────────────────
+// NOTE: GetExchangeRates and CalculateExchange are served as plain HTTP handlers
+// (not gRPC) at GET /bank/exchange-rates. Proto definitions below are provided
+// for documentation and future migration once protoc tooling is available.
+//
+// GET /bank/exchange-rates              → kursna lista (JSON: { rates: [...] })
+// GET /bank/exchange-rates?from=X&to=Y&amount=Z → konverzija (JSON: { result, bruto, ... })
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 service BankaService {
