@@ -24,6 +24,10 @@ type Config struct {
 
 	// JWT
 	JWTAccessSecret string
+
+	// ExchangeRate-API (https://www.exchangerate-api.com)
+	ExchangeRateAPIKey     string // required for live rates; falls back to local rates if empty
+	ExchangeRateAPIBaseURL string // default: https://v6.exchangerate-api.com/v6
 }
 
 // Load reads ENV vars and returns a populated Config.
@@ -48,6 +52,9 @@ func Load() (*Config, error) {
 		DBName:     os.Getenv("DB_NAME"),
 
 		JWTAccessSecret: getEnv("JWT_ACCESS_SECRET", "change-me-access-secret"),
+
+		ExchangeRateAPIKey:     os.Getenv("EXCHANGE_RATE_API_KEY"),
+		ExchangeRateAPIBaseURL: getEnv("EXCHANGE_RATE_API_BASE_URL", "https://v6.exchangerate-api.com/v6"),
 	}, nil
 }
 

@@ -1,10 +1,15 @@
 package handler
 
-// exchange_handler.go — direktni HTTP handler za konverziju valuta između računa.
-// Endpoint: POST /bank/client/exchange-transfers
+// exchange_handler.go — HTTP handleri za menjačnicu.
 //
-// Registrovan direktno na http.ServeMux (pored gRPC-Gateway) jer proto schema
-// ne sadrži polje convertedIznos potrebno za cross-currency prenos.
+// ExchangeTransferHandler  — POST /bank/client/exchange-transfers
+//   Kreira nalog konverzije valuta (intent + mobilna verifikacija).
+//   Registrovan direktno na http.ServeMux jer proto schema ne sadrži
+//   polje convertedIznos.
+//
+// ExchangeRateHandler — GET  /bank/exchange-rates[?from=X&to=Y&amount=Z]
+//                       POST /bank/exchange-rates/execute
+//   Vraća kursnu listu / informativnu konverziju / direktno izvršava transfer.
 
 import (
 	"encoding/json"
@@ -17,6 +22,8 @@ import (
 	auth "banka-backend/shared/auth"
 	"banka-backend/services/bank-service/internal/domain"
 )
+
+// ─── ExchangeTransferHandler ─────────────────────────────────────────────────
 
 // ExchangeTransferHandler kreira nalog konverzije valuta između dva računa istog korisnika.
 type ExchangeTransferHandler struct {
@@ -33,12 +40,12 @@ func NewExchangeTransferHandler(paymentService domain.PaymentService, jwtSecret 
 }
 
 type exchangeTransferRequest struct {
-	IdempotencyKey   string  `json:"idempotencyKey"`
-	SourceAccountId  int64   `json:"sourceAccountId"`
-	TargetAccountId  int64   `json:"targetAccountId"`
-	Amount           float64 `json:"amount"`           // iznos koji se skida sa izvornog računa
-	ConvertedAmount  float64 `json:"convertedAmount"`  // iznos koji se upisuje na ciljni račun
-	SvrhaPlacanja    string  `json:"svrhaPlacanja"`
+	IdempotencyKey  string  `json:"idempotencyKey"`
+	SourceAccountId int64   `json:"sourceAccountId"`
+	TargetAccountId int64   `json:"targetAccountId"`
+	Amount          float64 `json:"amount"`          // iznos koji se skida sa izvornog računa
+	ConvertedAmount float64 `json:"convertedAmount"` // iznos koji se upisuje na ciljni račun
+	SvrhaPlacanja   string  `json:"svrhaPlacanja"`
 }
 
 type exchangeTransferResponse struct {
@@ -50,16 +57,13 @@ type exchangeTransferResponse struct {
 
 // ServeHTTP obrađuje POST /bank/client/exchange-transfers zahteve.
 func (h *ExchangeTransferHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Dozvoli samo POST metodu.
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Postavi CORS header-e (isti origin kao i gRPC-Gateway).
 	w.Header().Set("Content-Type", "application/json")
 
-	// Validacija JWT tokena iz Authorization headera.
 	authHeader := r.Header.Get("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
@@ -83,7 +87,6 @@ func (h *ExchangeTransferHandler) ServeHTTP(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Dekodiraj telo zahteva.
 	var req exchangeTransferRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
@@ -150,8 +153,230 @@ func (h *ExchangeTransferHandler) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// ─── ExchangeRateHandler ──────────────────────────────────────────────────────
+
+// ExchangeRateHandler serves exchange rate endpoints over plain HTTP.
+type ExchangeRateHandler struct {
+	exchangeService domain.ExchangeService
+	jwtSecret       string
+}
+
+// NewExchangeRateHandler creates a new ExchangeRateHandler.
+func NewExchangeRateHandler(exchangeService domain.ExchangeService, jwtSecret string) *ExchangeRateHandler {
+	return &ExchangeRateHandler{
+		exchangeService: exchangeService,
+		jwtSecret:       jwtSecret,
+	}
+}
+
+// ServeHTTP routes requests based on path suffix and HTTP method:
+//
+//	GET  …/exchange-rates          → rates list or conversion
+//	POST …/exchange-rates/execute  → execute transfer
+func (h *ExchangeRateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	authHeader := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		exchangeWriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	claims, err := auth.VerifyToken(strings.TrimPrefix(authHeader, "Bearer "), h.jwtSecret)
+	if err != nil {
+		exchangeWriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	path := strings.TrimRight(r.URL.Path, "/")
+	isExecute := strings.HasSuffix(path, "/execute")
+
+	switch {
+	case isExecute && r.Method == http.MethodPost:
+		h.handleExecute(w, r, claims)
+	case !isExecute && r.Method == http.MethodGet:
+		q := r.URL.Query()
+		from, to, amountStr := q.Get("from"), q.Get("to"), q.Get("amount")
+		if from != "" && to != "" && amountStr != "" {
+			h.handleConvert(w, r, from, to, amountStr)
+		} else {
+			h.handleRatesList(w, r)
+		}
+	default:
+		exchangeWriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
+}
+
+// ─── Kursna lista ─────────────────────────────────────────────────────────────
+
+type exchangeRateJSON struct {
+	Oznaka   string  `json:"oznaka"`
+	Naziv    string  `json:"naziv"`
+	Kupovni  float64 `json:"kupovni"`
+	Srednji  float64 `json:"srednji"`
+	Prodajni float64 `json:"prodajni"`
+}
+
+type ratesListJSON struct {
+	Rates []exchangeRateJSON `json:"rates"`
+}
+
+func (h *ExchangeRateHandler) handleRatesList(w http.ResponseWriter, r *http.Request) {
+	rates, err := h.exchangeService.GetRates(r.Context())
+	if err != nil {
+		exchangeWriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "kursna lista nije dostupna"})
+		return
+	}
+
+	items := make([]exchangeRateJSON, 0, len(rates))
+	for _, rate := range rates {
+		items = append(items, exchangeRateJSON{
+			Oznaka:   rate.Oznaka,
+			Naziv:    rate.Naziv,
+			Kupovni:  rate.Kupovni,
+			Srednji:  rate.Srednji,
+			Prodajni: rate.Prodajni,
+		})
+	}
+	exchangeWriteJSON(w, http.StatusOK, ratesListJSON{Rates: items})
+}
+
+// ─── Konverzija (informativna) ────────────────────────────────────────────────
+
+type convertJSON struct {
+	Result    float64 `json:"result"`
+	Bruto     float64 `json:"bruto"`
+	Provizija float64 `json:"provizija"`
+	ViaRSD    bool    `json:"viaRsd"`
+	RateNote  string  `json:"rateNote"`
+}
+
+func (h *ExchangeRateHandler) handleConvert(w http.ResponseWriter, r *http.Request, from, to, amountStr string) {
+	amount, err := strconv.ParseFloat(amountStr, 64)
+	if err != nil || amount <= 0 {
+		exchangeWriteJSON(w, http.StatusBadRequest, map[string]string{"error": "neispravan iznos"})
+		return
+	}
+
+	result, err := h.exchangeService.CalculateExchange(r.Context(), from, to, amount)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrExchangeInvalidAmount):
+			exchangeWriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		case errors.Is(err, domain.ErrExchangeRateNotFound):
+			exchangeWriteJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+		default:
+			exchangeWriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "konverzija trenutno nije dostupna"})
+		}
+		return
+	}
+
+	exchangeWriteJSON(w, http.StatusOK, convertJSON{
+		Result:    result.Result,
+		Bruto:     result.Bruto,
+		Provizija: result.Provizija,
+		ViaRSD:    result.ViaRSD,
+		RateNote:  result.RateNote,
+	})
+}
+
+// ─── Izvršenje konverzije ─────────────────────────────────────────────────────
+
+type executeTransferRequest struct {
+	SourceAccountID int64   `json:"sourceAccountId"`
+	TargetAccountID int64   `json:"targetAccountId"`
+	FromOznaka      string  `json:"fromOznaka"`
+	ToOznaka        string  `json:"toOznaka"`
+	Amount          float64 `json:"amount"`
+}
+
+type executeTransferResponse struct {
+	ReferenceID     string  `json:"referenceId"`
+	SourceAccountID int64   `json:"sourceAccountId"`
+	TargetAccountID int64   `json:"targetAccountId"`
+	FromOznaka      string  `json:"fromOznaka"`
+	ToOznaka        string  `json:"toOznaka"`
+	OriginalAmount  float64 `json:"originalAmount"`
+	GrossAmount     float64 `json:"grossAmount"`
+	Provizija       float64 `json:"provizija"`
+	NetAmount       float64 `json:"netAmount"`
+	ViaRSD          bool    `json:"viaRsd"`
+	RateNote        string  `json:"rateNote"`
+}
+
+func (h *ExchangeRateHandler) handleExecute(w http.ResponseWriter, r *http.Request, claims *auth.AccessClaims) {
+	var req executeTransferRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		exchangeWriteJSON(w, http.StatusBadRequest, map[string]string{"error": "neispravno telo zahteva"})
+		return
+	}
+
+	vlasnikID, err := strconv.ParseInt(claims.Subject, 10, 64)
+	if err != nil {
+		exchangeWriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "neispravan korisnički ID u tokenu"})
+		return
+	}
+
+	input := domain.ExchangeTransferInput{
+		VlasnikID:       vlasnikID,
+		SourceAccountID: req.SourceAccountID,
+		TargetAccountID: req.TargetAccountID,
+		FromOznaka:      req.FromOznaka,
+		ToOznaka:        req.ToOznaka,
+		Amount:          req.Amount,
+	}
+
+	result, err := h.exchangeService.ExecuteExchangeTransfer(r.Context(), input)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrExchangeInvalidAmount):
+			exchangeWriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		case errors.Is(err, domain.ErrExchangeSameCurrency):
+			exchangeWriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		case errors.Is(err, domain.ErrExchangeSameAccount):
+			exchangeWriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		case errors.Is(err, domain.ErrExchangeWrongCurrency):
+			exchangeWriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		case errors.Is(err, domain.ErrExchangeAccountInactive):
+			exchangeWriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		case errors.Is(err, domain.ErrExchangeAccountNotOwned):
+			exchangeWriteJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		case errors.Is(err, domain.ErrExchangeInsufficientFunds):
+			exchangeWriteJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+		case errors.Is(err, domain.ErrAccountNotFound):
+			exchangeWriteJSON(w, http.StatusNotFound, map[string]string{"error": "račun nije pronađen"})
+		case errors.Is(err, domain.ErrExchangeRateNotFound):
+			exchangeWriteJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+		default:
+			exchangeWriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "greška pri izvršenju konverzije"})
+		}
+		return
+	}
+
+	exchangeWriteJSON(w, http.StatusOK, executeTransferResponse{
+		ReferenceID:     result.ReferenceID,
+		SourceAccountID: result.SourceAccountID,
+		TargetAccountID: result.TargetAccountID,
+		FromOznaka:      result.FromOznaka,
+		ToOznaka:        result.ToOznaka,
+		OriginalAmount:  result.OriginalAmount,
+		GrossAmount:     result.GrossAmount,
+		Provizija:       result.Provizija,
+		NetAmount:       result.NetAmount,
+		ViaRSD:          result.ViaRSD,
+		RateNote:        result.RateNote,
+	})
+}
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+// writeJSONError writes a {"message": msg} error response (used by ExchangeTransferHandler).
 func writeJSONError(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]string{"message": msg})
+}
+
+// exchangeWriteJSON writes any value as JSON (used by ExchangeRateHandler).
+func exchangeWriteJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
 }

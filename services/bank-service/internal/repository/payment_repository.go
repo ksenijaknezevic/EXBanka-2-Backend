@@ -422,6 +422,7 @@ func (r *paymentRepository) CreateTransferIntent(ctx context.Context, input doma
 			krajnjiIznos = &v
 		}
 
+
 		intent := &paymentIntentModel{
 			IdempotencyKey:     input.IdempotencyKey,
 			BrojNaloga:         brojNaloga,
