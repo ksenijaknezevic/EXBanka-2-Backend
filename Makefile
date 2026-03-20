@@ -11,6 +11,7 @@ proto:
 		--go_out=. --go_opt=module=banka-backend \
 		--go-grpc_out=. --go-grpc_opt=module=banka-backend \
 		--grpc-gateway_out=. --grpc-gateway_opt=module=banka-backend \
+		--openapiv2_out=docs/swagger \
 		proto/user/user.proto
 	protoc \
 		-I . -I third_party/googleapis \
@@ -22,6 +23,7 @@ proto:
 		--go_out=. --go_opt=module=banka-backend \
 		--go-grpc_out=. --go-grpc_opt=module=banka-backend \
 		--grpc-gateway_out=. --grpc-gateway_opt=module=banka-backend \
+		--openapiv2_out=docs/swagger \
 		proto/banka/banka.proto
 
 # ─── Go module ───────────────────────────────────────────────────────────────

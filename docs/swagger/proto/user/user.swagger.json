@@ -49,7 +49,376 @@
         ]
       }
     },
+    "/auth/forgot-password": {
+      "post": {
+        "summary": "ForgotPassword — Sends a reset link to the given email address.\nAlways responds successfully to prevent user enumeration.",
+        "operationId": "UserService_ForgotPassword",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ForgotPasswordResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ForgotPasswordRequest"
+            }
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/auth/reset-password": {
+      "post": {
+        "summary": "ResetPassword — Consumes a reset JWT and writes the new hashed password.\nPublic: no Authorization header required.",
+        "operationId": "UserService_ResetPassword",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ResetPasswordResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ResetPasswordRequest"
+            }
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/auth/set-password": {
+      "post": {
+        "summary": "SetPassword — Called by the employee from the activation email link.\nVerifies the activation JWT and writes the hashed password.\nPublic: no Authorization header required.",
+        "operationId": "UserService_SetPassword",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetPasswordResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SetPasswordRequest"
+            }
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/client": {
+      "get": {
+        "summary": "ListClients — Employee only.\nReturns a paginated, alphabetically-sorted list of clients for the\nmanagement portal.  Supports optional name and email filters.",
+        "operationId": "UserService_ListClients",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListClientsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "partial match on first_name, last_name, or \"first last\"; \"\" = no filter",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "email",
+            "description": "partial match on email; \"\" = no filter",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "description": "page size; 0 treated as 20",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "offset",
+            "description": "skip N results; 0 = from start",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      },
+      "post": {
+        "summary": "CreateClient — Employee only.\nCreates a new physical client account (no password). An activation email\nis sent asynchronously via the Notification service.",
+        "operationId": "UserService_CreateClient",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateClientResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateClientRequest"
+            }
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/client/search": {
+      "get": {
+        "summary": "SearchClients — Employee only.\nSearches clients by first/last name or email for Autocomplete and\nInfinite Scroll on the account-creation form.\nEmpty query returns all clients (paginated).",
+        "operationId": "UserService_SearchClients",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SearchClientsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "query",
+            "description": "partial match on first_name, last_name, or email; \"\" = return all",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "page",
+            "description": "1-indexed; 0 is treated as 1",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "limit",
+            "description": "page size; 0 is treated as 10",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/client/{id}": {
+      "get": {
+        "summary": "GetClientByID — Employee only.\nReturns the full profile of a single client for the employee portal.\nReturns NOT_FOUND when the ID is unknown or the user is not a CLIENT.",
+        "operationId": "UserService_GetClientByID",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetClientByIDResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "required — must be non-zero",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      },
+      "patch": {
+        "summary": "UpdateClient — Employee only.\nPartially updates the mutable fields of an existing client.\nReturns NOT_FOUND if the client does not exist.\nReturns ALREADY_EXISTS if the email is already in use by another account.",
+        "operationId": "UserService_UpdateClient",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateClientResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "required — must be non-zero",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UserServiceUpdateClientBody"
+            }
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
     "/employee": {
+      "get": {
+        "summary": "GetAllEmployees — Admin only.\nLists employees with optional partial-match filters and pagination.",
+        "operationId": "UserService_GetAllEmployees",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetAllEmployeesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "email",
+            "description": "partial match, case-insensitive; \"\" = no filter",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "firstName",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "lastName",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "position",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "page",
+            "description": "1-indexed; 0 is treated as 1",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageSize",
+            "description": "0 is treated as 10",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      },
       "post": {
         "summary": "CreateEmployee — Admin only.\nCreates a new employee account (no password). An activation email is sent\nautomatically via the Notification service.",
         "operationId": "UserService_CreateEmployee",
@@ -74,6 +443,118 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/v1CreateEmployeeRequest"
+            }
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/employee/{id}": {
+      "get": {
+        "summary": "GetEmployeeByID — Admin or MANAGE_USERS permission.\nReturns the full employee profile + permissions for the edit form.",
+        "operationId": "UserService_GetEmployeeByID",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetEmployeeByIDResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      },
+      "put": {
+        "summary": "UpdateEmployee — Admin or MANAGE_USERS permission.\nReplaces all mutable employee fields and their full permission set atomically.",
+        "operationId": "UserService_UpdateEmployee",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateEmployeeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "required",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UserServiceUpdateEmployeeBody"
+            }
+          }
+        ],
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/employee/{id}/active": {
+      "patch": {
+        "summary": "ToggleEmployeeActive — Admin or MANAGE_USERS. Sets is_active for any user (including ADMIN).",
+        "operationId": "UserService_ToggleEmployeeActive",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ToggleEmployeeActiveResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "user id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UserServiceToggleEmployeeActiveBody"
             }
           }
         ],
@@ -138,15 +619,38 @@
         ]
       }
     },
-    "/reset-password": {
-      "post": {
-        "summary": "ResetPassword — Sends a reset link to the given email address.\nAlways responds successfully to prevent user enumeration.",
-        "operationId": "UserService_ResetPassword",
+    "/permissions": {
+      "get": {
+        "summary": "GetAllPermissions — Admin only.\nReturns the full permission codebook for the Create/Edit Employee forms.",
+        "operationId": "UserService_GetAllPermissions",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v1ResetPasswordResponse"
+              "$ref": "#/definitions/v1GetAllPermissionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "UserService"
+        ]
+      }
+    },
+    "/refresh-token": {
+      "post": {
+        "summary": "RefreshToken — Exchanges a valid refresh token for a new access token.\nThe original refresh token is returned unchanged (no rolling sessions).",
+        "operationId": "UserService_RefreshToken",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RefreshTokenResponse"
             }
           },
           "default": {
@@ -162,7 +666,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v1ResetPasswordRequest"
+              "$ref": "#/definitions/v1RefreshTokenRequest"
             }
           }
         ],
@@ -170,9 +674,114 @@
           "UserService"
         ]
       }
+    },
+    "/user/me": {
+      "get": {
+        "summary": "GetMyProfile — Any authenticated user.\nReturns the caller's own profile information.",
+        "operationId": "UserService_GetMyProfile",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetMyProfileResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "UserService"
+        ]
+      }
     }
   },
   "definitions": {
+    "UserServiceToggleEmployeeActiveBody": {
+      "type": "object",
+      "properties": {
+        "isActive": {
+          "type": "boolean",
+          "title": "new active state"
+        }
+      }
+    },
+    "UserServiceUpdateClientBody": {
+      "type": "object",
+      "properties": {
+        "firstName": {
+          "type": "string",
+          "title": "optional — \"\" = keep existing"
+        },
+        "lastName": {
+          "type": "string",
+          "title": "optional — \"\" = keep existing"
+        },
+        "email": {
+          "type": "string",
+          "title": "optional — \"\" = keep existing; must be unique when provided"
+        },
+        "phoneNumber": {
+          "type": "string",
+          "title": "optional — \"\" = keep existing"
+        },
+        "address": {
+          "type": "string",
+          "title": "optional — \"\" = keep existing"
+        }
+      }
+    },
+    "UserServiceUpdateEmployeeBody": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "title": "required — must not be empty"
+        },
+        "firstName": {
+          "type": "string",
+          "title": "required — must not be empty"
+        },
+        "lastName": {
+          "type": "string",
+          "title": "required — must not be empty"
+        },
+        "birthDate": {
+          "type": "string",
+          "format": "int64",
+          "title": "Unix timestamp (ms)"
+        },
+        "gender": {
+          "$ref": "#/definitions/v1Gender"
+        },
+        "phoneNumber": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "position": {
+          "type": "string"
+        },
+        "department": {
+          "type": "string"
+        },
+        "isActive": {
+          "type": "boolean",
+          "title": "reflects the active-toggle on the frontend"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "full replacement of the permission set"
+        }
+      }
+    },
     "protobufAny": {
       "type": "object",
       "properties": {
@@ -225,6 +834,122 @@
         }
       }
     },
+    "v1ClientDetail": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "firstName": {
+          "type": "string"
+        },
+        "lastName": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "phoneNumber": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "dateOfBirth": {
+          "type": "string",
+          "format": "int64",
+          "title": "Unix timestamp (ms) — matches DB BIGINT birth_date"
+        },
+        "gender": {
+          "$ref": "#/definitions/v1Gender"
+        }
+      },
+      "description": "ClientDetail is the full client profile returned by the employee portal.\nReturned on the GetClientByID endpoint — no secrets exposed."
+    },
+    "v1ClientListItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "firstName": {
+          "type": "string"
+        },
+        "lastName": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "phoneNumber": {
+          "type": "string"
+        }
+      },
+      "description": "ClientListItem is the per-row projection returned by the ListClients endpoint.\nIncludes phone_number (unlike the lighter ClientPreview used for autocomplete)."
+    },
+    "v1ClientPreview": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "firstName": {
+          "type": "string"
+        },
+        "lastName": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        }
+      },
+      "description": "ClientPreview is a minimal client projection returned by SearchClients."
+    },
+    "v1CreateClientRequest": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "firstName": {
+          "type": "string"
+        },
+        "lastName": {
+          "type": "string"
+        },
+        "birthDate": {
+          "type": "string",
+          "format": "int64",
+          "title": "Unix timestamp (ms)"
+        },
+        "gender": {
+          "$ref": "#/definitions/v1Gender"
+        },
+        "phoneNumber": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateClientResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64",
+          "title": "new user id"
+        },
+        "email": {
+          "type": "string",
+          "title": "echoed back for confirmation"
+        }
+      }
+    },
     "v1CreateEmployeeRequest": {
       "type": "object",
       "properties": {
@@ -272,6 +997,10 @@
             "type": "string"
           },
           "description": "Initial set of permission codes to assign via user_permissions."
+        },
+        "userType": {
+          "$ref": "#/definitions/v1UserType",
+          "description": "Type of user being created. Defaults to USER_TYPE_EMPLOYEE if unspecified.\nUse USER_TYPE_ADMIN to create an administrator account."
         }
       }
     },
@@ -289,6 +1018,48 @@
         }
       }
     },
+    "v1EmployeeProfile": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/v1User"
+        },
+        "username": {
+          "type": "string"
+        },
+        "position": {
+          "type": "string"
+        },
+        "department": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "list of permission_code values from user_permissions"
+        }
+      },
+      "description": "EmployeeProfile combines User with the employee_details join.\nReturned on get/list endpoints — no secrets."
+    },
+    "v1ForgotPasswordRequest": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ForgotPasswordResponse": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "title": "\"If your email is registered in our system, you will receive a password reset link.\""
+        }
+      }
+    },
     "v1Gender": {
       "type": "string",
       "enum": [
@@ -300,12 +1071,87 @@
       "default": "GENDER_UNSPECIFIED",
       "description": "Gender mirrors the gender column in the users table."
     },
+    "v1GetAllEmployeesResponse": {
+      "type": "object",
+      "properties": {
+        "employees": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1EmployeeProfile"
+          }
+        }
+      }
+    },
+    "v1GetAllPermissionsResponse": {
+      "type": "object",
+      "properties": {
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PermissionEntry"
+          }
+        }
+      }
+    },
+    "v1GetClientByIDResponse": {
+      "type": "object",
+      "properties": {
+        "client": {
+          "$ref": "#/definitions/v1ClientDetail",
+          "title": "full client profile"
+        }
+      }
+    },
+    "v1GetEmployeeByIDResponse": {
+      "type": "object",
+      "properties": {
+        "employee": {
+          "$ref": "#/definitions/v1EmployeeProfile"
+        }
+      }
+    },
+    "v1GetMyProfileResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "email": {
+          "type": "string"
+        },
+        "firstName": {
+          "type": "string"
+        },
+        "lastName": {
+          "type": "string"
+        }
+      }
+    },
     "v1HealthCheckResponse": {
       "type": "object",
       "properties": {
         "status": {
           "type": "string",
           "title": "\"SERVING\" | \"NOT_SERVING\""
+        }
+      }
+    },
+    "v1ListClientsResponse": {
+      "type": "object",
+      "properties": {
+        "clients": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ClientListItem"
+          }
+        },
+        "hasMore": {
+          "type": "boolean",
+          "title": "true when more rows exist beyond this page"
         }
       }
     },
@@ -340,11 +1186,59 @@
         }
       }
     },
+    "v1PermissionEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int32",
+          "title": "stable numeric ID"
+        },
+        "permissionCode": {
+          "type": "string",
+          "title": "e.g. \"MANAGE_USERS\""
+        }
+      }
+    },
+    "v1RefreshTokenRequest": {
+      "type": "object",
+      "properties": {
+        "refreshToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1RefreshTokenResponse": {
+      "type": "object",
+      "properties": {
+        "accessToken": {
+          "type": "string"
+        },
+        "refreshToken": {
+          "type": "string",
+          "title": "echoed back unchanged"
+        },
+        "tokenType": {
+          "type": "string",
+          "title": "always \"Bearer\""
+        },
+        "expiresIn": {
+          "type": "string",
+          "format": "int64",
+          "title": "new access token lifetime in seconds"
+        }
+      }
+    },
     "v1ResetPasswordRequest": {
       "type": "object",
       "properties": {
-        "email": {
-          "type": "string"
+        "token": {
+          "type": "string",
+          "title": "JWT reset token from the email link"
+        },
+        "newPassword": {
+          "type": "string",
+          "title": "new password (min 8 chars)"
         }
       }
     },
@@ -353,9 +1247,127 @@
       "properties": {
         "message": {
           "type": "string",
-          "title": "e.g. \"If that address is registered, a reset link has been sent.\""
+          "title": "\"Password reset successfully.\""
         }
       }
+    },
+    "v1SearchClientsResponse": {
+      "type": "object",
+      "properties": {
+        "clients": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ClientPreview"
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1SetPasswordRequest": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "title": "JWT activation token from the email link"
+        },
+        "password": {
+          "type": "string",
+          "title": "new password (min 8 chars)"
+        }
+      }
+    },
+    "v1SetPasswordResponse": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "title": "\"Password set successfully.\""
+        }
+      }
+    },
+    "v1ToggleEmployeeActiveResponse": {
+      "type": "object",
+      "properties": {
+        "isActive": {
+          "type": "boolean",
+          "title": "new state after update"
+        }
+      }
+    },
+    "v1UpdateClientResponse": {
+      "type": "object",
+      "properties": {
+        "client": {
+          "$ref": "#/definitions/v1ClientDetail",
+          "title": "updated client profile"
+        }
+      }
+    },
+    "v1UpdateEmployeeResponse": {
+      "type": "object",
+      "properties": {
+        "employee": {
+          "$ref": "#/definitions/v1EmployeeProfile",
+          "title": "fresh profile read back after commit"
+        }
+      }
+    },
+    "v1User": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "email": {
+          "type": "string"
+        },
+        "firstName": {
+          "type": "string"
+        },
+        "lastName": {
+          "type": "string"
+        },
+        "birthDate": {
+          "type": "string",
+          "format": "int64",
+          "title": "Unix timestamp (ms) — matches DB BIGINT"
+        },
+        "gender": {
+          "$ref": "#/definitions/v1Gender"
+        },
+        "phoneNumber": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "userType": {
+          "$ref": "#/definitions/v1UserType"
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "User is the safe public projection of the users table.\nIMPORTANT: never populate password_hash or salt_password here."
+    },
+    "v1UserType": {
+      "type": "string",
+      "enum": [
+        "USER_TYPE_UNSPECIFIED",
+        "USER_TYPE_ADMIN",
+        "USER_TYPE_EMPLOYEE",
+        "USER_TYPE_CLIENT"
+      ],
+      "default": "USER_TYPE_UNSPECIFIED",
+      "description": "UserType mirrors the user_type column: 'ADMIN' | 'EMPLOYEE' | 'CLIENT'."
     }
   }
 }

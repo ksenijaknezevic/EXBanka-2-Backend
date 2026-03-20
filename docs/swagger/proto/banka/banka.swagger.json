@@ -1,0 +1,1963 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "proto/banka/banka.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "BankaService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/api/v1/client/credits": {
+      "get": {
+        "summary": "GetClientCredits — Client only. Vraća sve kredite prijavljenog klijenta, sortirano opadajuće po iznosu.",
+        "operationId": "BankaService_GetClientCredits",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetClientCreditsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "BankaService"
+        ]
+      },
+      "post": {
+        "summary": "ApplyForCredit — Client only. Podnosi zahtev za novi kredit.",
+        "operationId": "BankaService_ApplyForCredit",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ApplyForCreditResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ApplyForCreditRequest"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/api/v1/client/credits/{id}": {
+      "get": {
+        "summary": "GetCreditDetails — Client only. Vraća detalje i rate za jedan kredit.",
+        "operationId": "BankaService_GetCreditDetails",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetCreditDetailsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/api/v1/employee/credits": {
+      "get": {
+        "summary": "GetAllApprovedCredits — Employee only. Vraća sve odobrene kredite sa opcionim filterima, sortirano po broju računa.",
+        "operationId": "BankaService_GetAllApprovedCredits",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetAllApprovedCreditsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vrstaKredita",
+            "description": "opcioni filter",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "brojRacuna",
+            "description": "opcioni filter",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "description": "opcioni filter; \"\" = svi statusi",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/api/v1/employee/credits/requests": {
+      "get": {
+        "summary": "GetAllCreditRequests — Employee only. Vraća sve zahteve za kredit sa opcionim filterima.",
+        "operationId": "BankaService_GetAllCreditRequests",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetAllCreditRequestsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vrstaKredita",
+            "description": "opcioni filter; \"\" = sve vrste",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "brojRacuna",
+            "description": "opcioni filter; \"\" = svi racuni",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/api/v1/employee/credits/requests/{id}/approve": {
+      "post": {
+        "summary": "ApproveCredit — Employee only. Odobrava zahtev za kredit i uplaćuje iznos na račun klijenta.",
+        "operationId": "BankaService_ApproveCredit",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ApproveCreditResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "ID zahteva za kredit (CreditRequest)",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BankaServiceApproveCreditBody"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/api/v1/employee/credits/requests/{id}/reject": {
+      "post": {
+        "summary": "RejectCredit — Employee only. Odbija zahtev za kredit.",
+        "operationId": "BankaService_RejectCredit",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "ID zahteva za kredit (CreditRequest)",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BankaServiceRejectCreditBody"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/accounts": {
+      "post": {
+        "summary": "CreateAccount — Employee only. Kreira novi bankovni račun.",
+        "operationId": "BankaService_CreateAccount",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateAccountResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateAccountRequest"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/client/accounts": {
+      "get": {
+        "summary": "GetClientAccounts — Client only. Vraća aktivne račune trenutno prijavljenog klijenta.",
+        "operationId": "BankaService_GetClientAccounts",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetClientAccountsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/client/accounts/{id}": {
+      "get": {
+        "summary": "GetAccountDetail — Client only. Vraća detalje jednog računa.",
+        "operationId": "BankaService_GetAccountDetail",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AccountDetail"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/client/accounts/{id}/limit": {
+      "patch": {
+        "summary": "UpdateAccountLimit — Client only. Kreira pending action za promenu limita.",
+        "operationId": "BankaService_UpdateAccountLimit",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateAccountLimitResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BankaServiceUpdateAccountLimitBody"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/client/accounts/{id}/name": {
+      "patch": {
+        "summary": "RenameAccount — Client only. Menja naziv računa.",
+        "operationId": "BankaService_RenameAccount",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BankaServiceRenameAccountBody"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/client/accounts/{racunId}/transactions": {
+      "get": {
+        "summary": "GetAccountTransactions — Client only. Vraća transakcije za dati račun.",
+        "operationId": "BankaService_GetAccountTransactions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetAccountTransactionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "racunId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "sortBy",
+            "description": "\"datum\" | \"tip\"",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "sortOrder",
+            "description": "\"ASC\" | \"DESC\"",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/client/payment-recipients": {
+      "get": {
+        "summary": "GetPaymentRecipients — Client only. Lista sačuvanih primalaca.",
+        "operationId": "BankaService_GetPaymentRecipients",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetPaymentRecipientsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "BankaService"
+        ]
+      },
+      "post": {
+        "summary": "CreatePaymentRecipient — Client only. Dodaje novog primaoca.",
+        "operationId": "BankaService_CreatePaymentRecipient",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PaymentRecipientItem"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreatePaymentRecipientRequest"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/client/payment-recipients/{id}": {
+      "delete": {
+        "summary": "DeletePaymentRecipient — Client only. Briše primaoca.",
+        "operationId": "BankaService_DeletePaymentRecipient",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      },
+      "patch": {
+        "summary": "UpdatePaymentRecipient — Client only. Menja primaoca.",
+        "operationId": "BankaService_UpdatePaymentRecipient",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PaymentRecipientItem"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BankaServiceUpdatePaymentRecipientBody"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/client/payments": {
+      "get": {
+        "summary": "GetPaymentHistory — Client only. Istorija plaćanja sa filterima.",
+        "operationId": "BankaService_GetPaymentHistory",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetPaymentHistoryResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "dateFrom",
+            "description": "ISO 8601, opciono",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "dateTo",
+            "description": "ISO 8601, opciono",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "minIznos",
+            "description": "0 = bez filtera",
+            "in": "query",
+            "required": false,
+            "type": "number",
+            "format": "double"
+          },
+          {
+            "name": "maxIznos",
+            "description": "0 = bez filtera",
+            "in": "query",
+            "required": false,
+            "type": "number",
+            "format": "double"
+          },
+          {
+            "name": "status",
+            "description": "\"\" = sve",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      },
+      "post": {
+        "summary": "CreatePaymentIntent — Client only. Kreira nalog plaćanja i pokreće verifikaciju.",
+        "operationId": "BankaService_CreatePaymentIntent",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreatePaymentIntentResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "CreatePaymentIntentRequest — kreiranje naloga plaćanja između klijenata.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreatePaymentIntentRequest"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/client/payments/{id}": {
+      "get": {
+        "summary": "GetPaymentDetail — Client only. Detalji jednog naloga.",
+        "operationId": "BankaService_GetPaymentDetail",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PaymentIntentItem"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/client/payments/{intentId}/verify": {
+      "post": {
+        "summary": "VerifyAndExecutePayment — Client only. Proverava verifikacioni kod i izvršava plaćanje.",
+        "operationId": "BankaService_VerifyAndExecutePayment",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PaymentIntentItem"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "intentId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BankaServiceVerifyAndExecutePaymentBody"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/client/pending-actions/{id}/verify": {
+      "post": {
+        "summary": "VerifyLimitChange — Client only. Proverava kod i primenjuje promenu limita.",
+        "operationId": "BankaService_VerifyLimitChange",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "description": "pending_action.id (in path)",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BankaServiceVerifyLimitChangeBody"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/client/transfers": {
+      "post": {
+        "summary": "CreateTransferIntent — Client only. Kreira nalog prenosa između računa istog klijenta.",
+        "operationId": "BankaService_CreateTransferIntent",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreatePaymentIntentResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "CreateTransferIntentRequest — kreiranje prenosa između računa istog klijenta.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateTransferIntentRequest"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/currencies": {
+      "get": {
+        "summary": "GetCurrencies — javna metoda, vraća sve podržane valute.",
+        "operationId": "BankaService_GetCurrencies",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetCurrenciesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/delatnosti": {
+      "get": {
+        "summary": "GetDelatnosti — javna metoda, vraća šifarnik delatnosti.",
+        "operationId": "BankaService_GetDelatnosti",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetDelatnostiResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/transactions/pending": {
+      "get": {
+        "summary": "GetPendingActions — Client only. Vraća pending akcije za mobilni.\nMORA biti registrovana POSLE GetPendingAction jer grpc-gateway v2 prepend-uje handlere\n(poslje registrovani imaju prioritet). Statička ruta /pending mora pobediti {id}.",
+        "operationId": "BankaService_GetPendingActions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetPendingActionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/transactions/{id}": {
+      "get": {
+        "summary": "GetPendingAction — Client only. Vraća jednu pending akciju.",
+        "operationId": "BankaService_GetPendingAction",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetPendingActionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/transactions/{id}/approve": {
+      "post": {
+        "summary": "ApprovePendingAction — Client only. Odobrava akciju i generiše verifikacioni kod.",
+        "operationId": "BankaService_ApprovePendingAction",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ApprovePendingActionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BankaServiceApprovePendingActionBody"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "BankaServiceApproveCreditBody": {
+      "type": "object"
+    },
+    "BankaServiceApprovePendingActionBody": {
+      "type": "object"
+    },
+    "BankaServiceRejectCreditBody": {
+      "type": "object"
+    },
+    "BankaServiceRenameAccountBody": {
+      "type": "object",
+      "properties": {
+        "noviNaziv": {
+          "type": "string"
+        }
+      }
+    },
+    "BankaServiceUpdateAccountLimitBody": {
+      "type": "object",
+      "properties": {
+        "dnevniLimit": {
+          "type": "number",
+          "format": "double"
+        },
+        "mesecniLimit": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "BankaServiceUpdatePaymentRecipientBody": {
+      "type": "object",
+      "properties": {
+        "naziv": {
+          "type": "string"
+        },
+        "brojRacuna": {
+          "type": "string"
+        }
+      }
+    },
+    "BankaServiceVerifyAndExecutePaymentBody": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        }
+      },
+      "description": "VerifyPaymentRequest — verifikacija koda i izvršenje naloga."
+    },
+    "BankaServiceVerifyLimitChangeBody": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "6-cifreni kod"
+        }
+      }
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1AccountDetail": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "brojRacuna": {
+          "type": "string"
+        },
+        "nazivRacuna": {
+          "type": "string"
+        },
+        "vrstaRacuna": {
+          "type": "string"
+        },
+        "kategorijaRacuna": {
+          "type": "string"
+        },
+        "valutaOznaka": {
+          "type": "string"
+        },
+        "stanjeRacuna": {
+          "type": "number",
+          "format": "double"
+        },
+        "rezervisanaSredstva": {
+          "type": "number",
+          "format": "double"
+        },
+        "raspolozivoStanje": {
+          "type": "number",
+          "format": "double"
+        },
+        "dnevniLimit": {
+          "type": "number",
+          "format": "double"
+        },
+        "mesecniLimit": {
+          "type": "number",
+          "format": "double"
+        },
+        "nazivFirme": {
+          "type": "string",
+          "title": "samo za POSLOVNI račun"
+        }
+      },
+      "description": "AccountDetail je detaljna projekcija računa."
+    },
+    "v1AccountListItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "brojRacuna": {
+          "type": "string"
+        },
+        "nazivRacuna": {
+          "type": "string"
+        },
+        "vrstaRacuna": {
+          "type": "string",
+          "title": "\"LICNI\" | \"POSLOVNI\""
+        },
+        "kategorijaRacuna": {
+          "type": "string",
+          "title": "\"TEKUCI\" | \"DEVIZNI\""
+        },
+        "valutaOznaka": {
+          "type": "string"
+        },
+        "stanjeRacuna": {
+          "type": "number",
+          "format": "double"
+        },
+        "rezervisanaSredstva": {
+          "type": "number",
+          "format": "double"
+        },
+        "raspolozivoStanje": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "description": "AccountListItem je minimalna projekcija računa za listu."
+    },
+    "v1ApplyForCreditRequest": {
+      "type": "object",
+      "properties": {
+        "vrstaKredita": {
+          "type": "string"
+        },
+        "tipKamate": {
+          "type": "string"
+        },
+        "iznosKredita": {
+          "type": "string"
+        },
+        "valuta": {
+          "type": "string"
+        },
+        "svrhaKredita": {
+          "type": "string"
+        },
+        "iznosMesecnePlate": {
+          "type": "string"
+        },
+        "statusZaposlenja": {
+          "type": "string"
+        },
+        "periodZaposlenja": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "kontaktTelefon": {
+          "type": "string"
+        },
+        "brojRacuna": {
+          "type": "string"
+        },
+        "rokOtplate": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1ApplyForCreditResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "status": {
+          "type": "string"
+        },
+        "datumPodnosenja": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ApproveCreditResponse": {
+      "type": "object",
+      "properties": {
+        "kredit": {
+          "$ref": "#/definitions/v1Credit"
+        }
+      }
+    },
+    "v1ApprovePendingActionResponse": {
+      "type": "object",
+      "properties": {
+        "verificationCode": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "expiresInSeconds": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1CreateAccountRequest": {
+      "type": "object",
+      "properties": {
+        "zaposleniId": {
+          "type": "string",
+          "format": "int64",
+          "title": "ID zaposlenog koji kreira račun"
+        },
+        "vlasnikId": {
+          "type": "string",
+          "format": "int64",
+          "title": "ID vlasnika računa (klijent)"
+        },
+        "valutaId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "firma": {
+          "$ref": "#/definitions/v1Firma",
+          "title": "null za fizička lica"
+        },
+        "kategorijaRacuna": {
+          "type": "string"
+        },
+        "vrstaRacuna": {
+          "type": "string"
+        },
+        "podvrsta": {
+          "type": "string"
+        },
+        "naziv": {
+          "type": "string"
+        },
+        "stanje": {
+          "type": "number",
+          "format": "double",
+          "title": "početno stanje računa"
+        },
+        "kreirajKarticu": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1CreateAccountResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64",
+          "title": "ID novokreiranog računa"
+        }
+      }
+    },
+    "v1CreatePaymentIntentRequest": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string",
+          "title": "UUID koji generiše frontend"
+        },
+        "racunPlatiocaId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "brojRacunaPrimaoca": {
+          "type": "string"
+        },
+        "nazivPrimaoca": {
+          "type": "string"
+        },
+        "iznos": {
+          "type": "number",
+          "format": "double"
+        },
+        "sifraPlacanja": {
+          "type": "string",
+          "title": "3 cifre, počinje sa 2"
+        },
+        "pozivNaBroj": {
+          "type": "string",
+          "title": "opciono"
+        },
+        "svrhaPlacanja": {
+          "type": "string"
+        }
+      },
+      "description": "CreatePaymentIntentRequest — kreiranje naloga plaćanja između klijenata."
+    },
+    "v1CreatePaymentIntentResponse": {
+      "type": "object",
+      "properties": {
+        "intentId": {
+          "type": "string",
+          "format": "int64",
+          "title": "ID payment_intent-a"
+        },
+        "actionId": {
+          "type": "string",
+          "format": "int64",
+          "title": "ID pending_action-a za mobilnu verifikaciju"
+        },
+        "brojNaloga": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "\"U_OBRADI\""
+        },
+        "valuta": {
+          "type": "string"
+        },
+        "iznos": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "description": "CreatePaymentIntentResponse — odgovor pri kreiranju naloga."
+    },
+    "v1CreatePaymentRecipientRequest": {
+      "type": "object",
+      "properties": {
+        "naziv": {
+          "type": "string"
+        },
+        "brojRacuna": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateTransferIntentRequest": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "racunPlatiocaId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "racunPrimaocaId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "iznos": {
+          "type": "number",
+          "format": "double"
+        },
+        "svrhaPlacanja": {
+          "type": "string"
+        }
+      },
+      "description": "CreateTransferIntentRequest — kreiranje prenosa između računa istog klijenta."
+    },
+    "v1Credit": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "brojKredita": {
+          "type": "string",
+          "title": "jedinstveni identifikator kredita"
+        },
+        "brojRacuna": {
+          "type": "string",
+          "title": "FK na račun klijenta"
+        },
+        "vrstaKredita": {
+          "type": "string",
+          "title": "GOTOVINSKI | STAMBENI | AUTO | REFINANSIRAJUCI | STUDENTSKI"
+        },
+        "iznosKredita": {
+          "type": "string",
+          "title": "decimal kao string (precision-safe)"
+        },
+        "periodOtplate": {
+          "type": "integer",
+          "format": "int32",
+          "title": "u mesecima"
+        },
+        "nominalnaKamatnaStopa": {
+          "type": "string",
+          "title": "nominal interest rate kao string"
+        },
+        "efektivnaKamatnaStopa": {
+          "type": "string",
+          "title": "effective interest rate kao string"
+        },
+        "datumUgovaranja": {
+          "type": "string",
+          "title": "ISO 8601 date"
+        },
+        "datumIsplate": {
+          "type": "string",
+          "title": "ISO 8601 date — datum kada je novac uplaćen"
+        },
+        "iznosMesecneRate": {
+          "type": "string",
+          "title": "decimal kao string"
+        },
+        "datumSledeceRate": {
+          "type": "string",
+          "title": "ISO 8601 date"
+        },
+        "preostaloDugovanje": {
+          "type": "string",
+          "title": "decimal kao string"
+        },
+        "valuta": {
+          "type": "string",
+          "title": "ISO 4217 kod, e.g. \"RSD\", \"EUR\""
+        },
+        "status": {
+          "type": "string",
+          "title": "ODOBREN | ODBIJEN | OTPLACEN | U_KASNJENJU"
+        },
+        "tipKamate": {
+          "type": "string",
+          "title": "FIKSNI | VARIJABILNI"
+        }
+      },
+      "description": "Credit (Kredit) — pun zapis o kreditu klijenta."
+    },
+    "v1CreditRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "klijentId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "vrstaKredita": {
+          "type": "string"
+        },
+        "tipKamate": {
+          "type": "string"
+        },
+        "iznosKredita": {
+          "type": "string",
+          "title": "decimal kao string"
+        },
+        "valuta": {
+          "type": "string"
+        },
+        "svrhaKredita": {
+          "type": "string"
+        },
+        "iznosMesecnePlate": {
+          "type": "string",
+          "title": "decimal kao string"
+        },
+        "statusZaposlenja": {
+          "type": "string",
+          "title": "STALNO | PRIVREMENO | NEZAPOSLEN"
+        },
+        "periodZaposlenja": {
+          "type": "integer",
+          "format": "int32",
+          "title": "u mesecima"
+        },
+        "kontaktTelefon": {
+          "type": "string"
+        },
+        "brojRacuna": {
+          "type": "string",
+          "title": "racun na koji se uplacuje i sa kojeg se skida rata"
+        },
+        "rokOtplate": {
+          "type": "integer",
+          "format": "int32",
+          "title": "u mesecima"
+        },
+        "datumPodnosenja": {
+          "type": "string",
+          "title": "ISO 8601 datetime"
+        },
+        "status": {
+          "type": "string",
+          "title": "NA_CEKANJU | ODOBREN | ODBIJEN"
+        }
+      },
+      "description": "CreditRequest — zahtev klijenta za kredit koji ceka obradu zaposlenog."
+    },
+    "v1Currency": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "naziv": {
+          "type": "string",
+          "title": "e.g. \"Srpski dinar\""
+        },
+        "oznaka": {
+          "type": "string",
+          "title": "ISO 4217 kod, e.g. \"RSD\", \"EUR\""
+        }
+      },
+      "description": "Currency predstavlja podržanu valutu u sistemu."
+    },
+    "v1Delatnost": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "sifra": {
+          "type": "string",
+          "title": "šifra delatnosti, e.g. \"6411\""
+        },
+        "naziv": {
+          "type": "string"
+        },
+        "grana": {
+          "type": "string"
+        },
+        "sektor": {
+          "type": "string"
+        }
+      },
+      "description": "Delatnost predstavlja šifarnik delatnosti (klasifikacija privrednih subjekata)."
+    },
+    "v1Firma": {
+      "type": "object",
+      "properties": {
+        "naziv": {
+          "type": "string"
+        },
+        "maticniBroj": {
+          "type": "string"
+        },
+        "pib": {
+          "type": "string"
+        },
+        "delatnostId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "adresa": {
+          "type": "string"
+        },
+        "vlasnikId": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "description": "Firma se popunjava samo za poslovne račune; za fizička lica ostaje null."
+    },
+    "v1GetAccountTransactionsResponse": {
+      "type": "object",
+      "properties": {
+        "transactions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Transakcija"
+          }
+        }
+      }
+    },
+    "v1GetAllApprovedCreditsResponse": {
+      "type": "object",
+      "properties": {
+        "krediti": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Credit"
+          }
+        }
+      }
+    },
+    "v1GetAllCreditRequestsResponse": {
+      "type": "object",
+      "properties": {
+        "zahtevi": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CreditRequest"
+          }
+        }
+      }
+    },
+    "v1GetClientAccountsResponse": {
+      "type": "object",
+      "properties": {
+        "accounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AccountListItem"
+          }
+        }
+      }
+    },
+    "v1GetClientCreditsResponse": {
+      "type": "object",
+      "properties": {
+        "credits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Credit"
+          }
+        }
+      }
+    },
+    "v1GetCreditDetailsResponse": {
+      "type": "object",
+      "properties": {
+        "kredit": {
+          "$ref": "#/definitions/v1Credit"
+        },
+        "rate": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Installment"
+          }
+        }
+      }
+    },
+    "v1GetCurrenciesResponse": {
+      "type": "object",
+      "properties": {
+        "valute": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Currency"
+          }
+        }
+      }
+    },
+    "v1GetDelatnostiResponse": {
+      "type": "object",
+      "properties": {
+        "delatnosti": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Delatnost"
+          }
+        }
+      }
+    },
+    "v1GetPaymentHistoryResponse": {
+      "type": "object",
+      "properties": {
+        "payments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PaymentIntentItem"
+          }
+        }
+      }
+    },
+    "v1GetPaymentRecipientsResponse": {
+      "type": "object",
+      "properties": {
+        "recipients": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PaymentRecipientItem"
+          }
+        }
+      }
+    },
+    "v1GetPendingActionResponse": {
+      "type": "object",
+      "properties": {
+        "transaction": {
+          "$ref": "#/definitions/v1PendingActionItem"
+        }
+      }
+    },
+    "v1GetPendingActionsResponse": {
+      "type": "object",
+      "properties": {
+        "transactions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PendingActionItem"
+          }
+        }
+      }
+    },
+    "v1Installment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "kreditId": {
+          "type": "string",
+          "format": "int64",
+          "title": "FK na Credit"
+        },
+        "iznosRate": {
+          "type": "string",
+          "title": "decimal kao string"
+        },
+        "iznosKamatneStope": {
+          "type": "string",
+          "title": "kamata u ovoj rati, decimal kao string"
+        },
+        "valuta": {
+          "type": "string"
+        },
+        "ocekivaniDatumDospeca": {
+          "type": "string",
+          "title": "ISO 8601 date"
+        },
+        "praviDatumDospeca": {
+          "type": "string",
+          "title": "ISO 8601 date; prazan dok novac nije skinut"
+        },
+        "statusPlacanja": {
+          "type": "string",
+          "title": "PLACENO | NEPLACENO | KASNI"
+        }
+      },
+      "description": "Installment (Rata) — jedan zapis o rati kredita."
+    },
+    "v1PaymentIntentItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "brojNaloga": {
+          "type": "string"
+        },
+        "tipTransakcije": {
+          "type": "string",
+          "title": "\"PLACANJE\" | \"PRENOS\""
+        },
+        "brojRacunaPlatioca": {
+          "type": "string"
+        },
+        "brojRacunaPrimaoca": {
+          "type": "string"
+        },
+        "nazivPrimaoca": {
+          "type": "string"
+        },
+        "iznos": {
+          "type": "number",
+          "format": "double"
+        },
+        "krajnjiIznos": {
+          "type": "number",
+          "format": "double"
+        },
+        "provizija": {
+          "type": "number",
+          "format": "double"
+        },
+        "valuta": {
+          "type": "string"
+        },
+        "sifraPlacanja": {
+          "type": "string"
+        },
+        "pozivNaBroj": {
+          "type": "string"
+        },
+        "svrhaPlacanja": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "\"U_OBRADI\" | \"REALIZOVANO\" | \"ODBIJENO\""
+        },
+        "createdAt": {
+          "type": "string",
+          "title": "ISO 8601"
+        },
+        "executedAt": {
+          "type": "string",
+          "title": "ISO 8601, prazan ako nije izvršen"
+        },
+        "failedReason": {
+          "type": "string"
+        },
+        "intentId": {
+          "type": "string",
+          "format": "int64",
+          "title": "alias za id, za frontend kompatibilnost"
+        }
+      },
+      "description": "PaymentIntentItem — detalji jednog naloga plaćanja."
+    },
+    "v1PaymentRecipientItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "naziv": {
+          "type": "string"
+        },
+        "brojRacuna": {
+          "type": "string"
+        }
+      }
+    },
+    "v1PendingActionItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "actionType": {
+          "type": "string",
+          "title": "\"PROMENA_LIMITA\""
+        },
+        "recipientName": {
+          "type": "string",
+          "title": "naziv akcije, npr. \"Promena limita\""
+        },
+        "recipientAccount": {
+          "type": "string",
+          "title": "broj racuna"
+        },
+        "amount": {
+          "type": "number",
+          "format": "double",
+          "title": "dnevni limit"
+        },
+        "currency": {
+          "type": "string",
+          "title": "valuta računa"
+        },
+        "purpose": {
+          "type": "string",
+          "title": "\"Dnevni: X / Mesečni: Y\""
+        },
+        "createdAt": {
+          "type": "string",
+          "title": "ISO 8601"
+        },
+        "status": {
+          "type": "string",
+          "title": "\"PENDING\""
+        }
+      },
+      "description": "PendingActionItem — projekcija za mobilni prikaz.\nPolja su nazvana tako da odgovaraju postojećim DTO-ovima u mobilnoj aplikaciji."
+    },
+    "v1Transakcija": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "racunId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "tipTransakcije": {
+          "type": "string"
+        },
+        "iznos": {
+          "type": "number",
+          "format": "double"
+        },
+        "opis": {
+          "type": "string"
+        },
+        "vremeIzvrsavanja": {
+          "type": "string",
+          "title": "ISO 8601 string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "description": "Transakcija je projekcija jednog zapisa o transakciji."
+    },
+    "v1UpdateAccountLimitResponse": {
+      "type": "object",
+      "properties": {
+        "actionId": {
+          "type": "string",
+          "format": "int64",
+          "title": "ID pending akcije za verifikaciju"
+        },
+        "status": {
+          "type": "string",
+          "title": "\"AWAITING_VERIFICATION\""
+        }
+      }
+    }
+  }
+}
