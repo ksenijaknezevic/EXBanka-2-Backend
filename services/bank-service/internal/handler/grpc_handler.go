@@ -46,8 +46,10 @@ type BankHandler struct {
 	kreditService    domain.KreditService
 	karticaService   domain.KarticaService
 	berzaService     domain.BerzaService
-	userClient       clientEmailLookup
-	accountPublisher worker.AccountEmailPublisher
+	listingService    domain.ListingService
+	exchangeService   domain.ExchangeService
+	userClient        clientEmailLookup
+	accountPublisher  worker.AccountEmailPublisher
 }
 
 func NewBankHandler(
@@ -58,6 +60,8 @@ func NewBankHandler(
 	kreditService domain.KreditService,
 	karticaService domain.KarticaService,
 	berzaService domain.BerzaService,
+	listingService domain.ListingService,
+	exchangeService domain.ExchangeService,
 	userClient clientEmailLookup,
 	accountPublisher worker.AccountEmailPublisher,
 ) *BankHandler {
@@ -69,6 +73,8 @@ func NewBankHandler(
 		kreditService:    kreditService,
 		karticaService:   karticaService,
 		berzaService:     berzaService,
+		listingService:   listingService,
+		exchangeService:  exchangeService,
 		userClient:       userClient,
 		accountPublisher: accountPublisher,
 	}
@@ -247,6 +253,18 @@ func extractClientID(ctx context.Context) (int64, error) {
 		return 0, status.Errorf(codes.Internal, "neispravan korisnički ID u tokenu: %v", err)
 	}
 	return id, nil
+}
+
+// requireClientOrEmployee dozvoljava čitanje tržišnih listinga klijentima i zaposlenima (aktuarima).
+func requireClientOrEmployee(ctx context.Context) error {
+	claims, ok := auth.ClaimsFromContext(ctx)
+	if !ok {
+		return status.Error(codes.Unauthenticated, "niste autentifikovani")
+	}
+	if claims.UserType != "CLIENT" && claims.UserType != "EMPLOYEE" && claims.UserType != "ADMIN" {
+		return status.Error(codes.PermissionDenied, "nemaš pravo pristupa hartijama od vrednosti")
+	}
+	return nil
 }
 
 // GetClientAccounts vraća aktivne račune trenutno prijavljenog klijenta.

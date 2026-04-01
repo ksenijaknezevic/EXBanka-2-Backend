@@ -532,6 +532,91 @@ message ToggleMarketTestModeRequest {
   bool enabled = 1;  // true = uključi bypass radnog vremena, false = isključi
 }
 
+// ─── Listings (Hartije od vrednosti) ─────────────────────────────────────────
+
+message ListingListItem {
+  int64  id                  = 1;
+  string ticker              = 2;
+  string name                = 3;
+  string listing_type        = 4;  // "STOCK" | "FOREX" | "FUTURE" | "OPTION"
+  int64  exchange_id         = 5;
+  double price               = 6;
+  double ask                 = 7;
+  double bid                 = 8;
+  int64  volume              = 9;
+  double change_percent      = 10;
+  double dollar_volume       = 11;
+  double initial_margin_cost = 12;
+  string last_refresh        = 13; // ISO 8601 string; "" ako nikad nije osveženo
+}
+
+message ListingDetail {
+  ListingListItem base      = 1;
+  double nominal_value      = 2;
+  double contract_size      = 3;
+  double maintenance_margin = 4;
+  string details_json       = 5; // raw JSON za FUTURE/OPTION dodatna polja
+}
+
+message ListingHistoryItem {
+  string date         = 1; // "YYYY-MM-DD"
+  double price        = 2;
+  double ask_high     = 3;
+  double bid_low      = 4;
+  double price_change = 5;
+  int64  volume       = 6;
+}
+
+message GetListingsRequest {
+  string listing_type = 1; // "" = sve
+  string search       = 2; // parcijalni match na ticker ili naziv
+  double min_price    = 3; // 0 = bez filtera
+  double max_price    = 4; // 0 = bez filtera
+  int64  min_volume   = 5; // 0 = bez filtera
+  string sort_by      = 6; // "price" | "volume" | "change" | "ticker"
+  string sort_order   = 7; // "ASC" | "DESC"
+  int32  page         = 8;
+  int32  page_size    = 9;
+  int64  max_volume   = 10; // 0 = bez filtera (gornja granica volumena)
+  // Za FUTURE/OPTION: filter po settlement_date u details_json ("YYYY-MM-DD"); prazno = bez filtera
+  string settlement_from = 11;
+  string settlement_to   = 12;
+}
+
+message GetListingsResponse {
+  repeated ListingListItem listings = 1;
+  int32 total                       = 2;
+}
+
+message GetListingByIDRequest {
+  int64 id = 1;
+}
+
+message GetListingHistoryRequest {
+  int64  id        = 1;
+  string from_date = 2; // "YYYY-MM-DD"; "" = bez donje granice
+  string to_date   = 3; // "YYYY-MM-DD"; "" = danas
+}
+
+message GetListingHistoryResponse {
+  repeated ListingHistoryItem history = 1;
+}
+
+// CreateListingOrderRequest — klijent kreira nalog za hartiju (validacija sredstava).
+message CreateListingOrderRequest {
+  int64  account_id    = 1;
+  int64  listing_id    = 2;
+  string side          = 3; // BUY | SELL
+  string order_type    = 4; // MARKET | LIMIT | STOP
+  double quantity      = 5;
+  double limit_price   = 6; // za LIMIT; 0 inače
+  double stop_price    = 7; // za STOP; 0 inače
+}
+
+message CreateListingOrderResponse {
+  string message = 1;
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 service BankaService {
@@ -810,6 +895,37 @@ service BankaService {
   rpc ToggleMarketTestMode(ToggleMarketTestModeRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
       post: "/bank/admin/exchanges/test-mode"
+      body: "*"
+    };
+  }
+
+  // ── Hartije od vrednosti (Listings) ──────────────────────────────────────
+
+  // GetListings — Client only. Vraća listu hartija sa filterima i paginacijom.
+  rpc GetListings(GetListingsRequest) returns (GetListingsResponse) {
+    option (google.api.http) = {
+      get: "/bank/listings"
+    };
+  }
+
+  // GetListingByID — Client only. Vraća detalje jedne hartije po ID-u.
+  rpc GetListingByID(GetListingByIDRequest) returns (ListingDetail) {
+    option (google.api.http) = {
+      get: "/bank/listings/{id}"
+    };
+  }
+
+  // GetListingHistory — Client only. Vraća istoriju dnevnih cena za datu hartiju.
+  rpc GetListingHistory(GetListingHistoryRequest) returns (GetListingHistoryResponse) {
+    option (google.api.http) = {
+      get: "/bank/listings/{id}/history"
+    };
+  }
+
+  // CreateListingOrder — Client only. Provera raspoloživog stanja; ne knjiži trgovinu (Celina 4).
+  rpc CreateListingOrder(CreateListingOrderRequest) returns (CreateListingOrderResponse) {
+    option (google.api.http) = {
+      post: "/bank/listings/orders"
       body: "*"
     };
   }

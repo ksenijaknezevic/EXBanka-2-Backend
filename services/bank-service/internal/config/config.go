@@ -55,6 +55,18 @@ type Config struct {
 	// Koristi se za sinhronizovano slanje OTP emaila u Flow 2.
 	// Ako je prazno, RequestKartica endpoint vraća 500.
 	NotificationServiceAddr string // env: NOTIFICATION_SERVICE_ADDR
+
+	// Finnhub — API ključ za tržišne podatke (https://finnhub.io).
+	// Ako je prazno, ListingRefresherWorker koristi mock vrednosti.
+	FinnhubAPIKey string // env: FINNHUB_API_KEY
+
+	// AlphaVantage — API ključ za Company Overview (STOCK) i Forex kurseve.
+	// Ako je prazno, preskače se AV logika i koriste se Finnhub/mock vrednosti.
+	AlphaVantageAPIKey string // env: ALPHAVANTAGE_API_KEY
+
+	// ListingRefreshIntervalMinutes — koliko često worker osvežava cene hartija.
+	// Default: 15 minuta. Za testiranje postaviti na 1.
+	ListingRefreshIntervalMinutes int // env: LISTING_REFRESH_INTERVAL_MINUTES
 }
 
 // Load reads ENV vars and returns a populated Config.
@@ -95,6 +107,10 @@ func Load() (*Config, error) {
 
 		RedisURL:                os.Getenv("REDIS_URL"),
 		NotificationServiceAddr: getEnv("NOTIFICATION_SERVICE_ADDR", "notification-service:50053"),
+
+		FinnhubAPIKey:                 os.Getenv("FINNHUB_API_KEY"),
+		AlphaVantageAPIKey:            os.Getenv("ALPHAVANTAGE_API_KEY"),
+		ListingRefreshIntervalMinutes: getEnvInt("LISTING_REFRESH_INTERVAL_MINUTES", 15),
 	}, nil
 }
 

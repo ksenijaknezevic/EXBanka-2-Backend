@@ -128,6 +128,9 @@ func main() {
 	karticaService := service.NewKarticaService(karticaRepo, cfg.CVVPepper, redisStore, notifClient)
 	berzaService := service.NewBerzaService(berzaRepo, marketModeStore)
 
+	listingRepo := repository.NewListingRepository(db)
+	listingService := service.NewListingService(listingRepo)
+
 	// ── InstallmentWorker (cron job za automatsku naplatu rata) ───────────────
 	var notifPublisher worker.NotificationPublisher
 	if cfg.RabbitMQURL != "" {
@@ -166,12 +169,12 @@ func main() {
 	actuaryService := service.NewActuaryService(actuaryRepo)
 	actuaryHandler := handler.NewActuaryHandler(actuaryService)
 
-	bankHandler := handler.NewBankHandler(currencyService, delatnostService, accountService, paymentService, kreditService, karticaService, berzaService, userClient, accountPublisher)
 	exchangeProvider := repository.NewExchangeRateProvider(cfg.ExchangeRateAPIKey, cfg.ExchangeRateAPIBaseURL)
 	exchangeTransferRepo := repository.NewExchangeTransferRepository(db)
 	exchangeService := service.NewExchangeService(exchangeProvider, exchangeTransferRepo, cfg.ExchangeSpreadRate, cfg.ExchangeProvizijaRate)
 
-	
+	bankHandler := handler.NewBankHandler(currencyService, delatnostService, accountService, paymentService, kreditService, karticaService, berzaService, listingService, exchangeService, userClient, accountPublisher)
+
 	receiptHandler := handler.NewPaymentReceiptHandler(paymentService, cfg.JWTAccessSecret)
 	exchangeTransferHandler := handler.NewExchangeTransferHandler(paymentService, cfg.JWTAccessSecret)
 	exchangeRateHandler := handler.NewExchangeRateHandler(exchangeService, cfg.JWTAccessSecret)
@@ -255,6 +258,11 @@ func main() {
 	// Worker koristi isti ctx koji se otkazuje pri SIGINT/SIGTERM,
 	// što garantuje graceful shutdown bez dodatne sinhronizacije.
 	go installmentWorker.Start(ctx)
+
+	// ── 7c. Start ListingRefresherWorker (osvežava cene hartija periodično) ────
+	listingRefreshInterval := time.Duration(cfg.ListingRefreshIntervalMinutes) * time.Minute
+	listingRefresherWorker := worker.NewListingRefresherWorker(listingRepo, listingRefreshInterval, cfg.FinnhubAPIKey, cfg.AlphaVantageAPIKey)
+	go listingRefresherWorker.Start(ctx)
 
 	// ── 7b. Start ActuaryConsumer (RabbitMQ event listener) ──────────────────
 	// Listens on the user_created queue and auto-provisions actuary profiles

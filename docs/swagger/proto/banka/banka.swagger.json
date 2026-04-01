@@ -1169,6 +1169,230 @@
         ]
       }
     },
+    "/bank/listings": {
+      "get": {
+        "summary": "GetListings — Client only. Vraća listu hartija sa filterima i paginacijom.",
+        "operationId": "BankaService_GetListings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetListingsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "listingType",
+            "description": "\"\" = sve",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "search",
+            "description": "parcijalni match na ticker ili naziv",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "minPrice",
+            "description": "0 = bez filtera",
+            "in": "query",
+            "required": false,
+            "type": "number",
+            "format": "double"
+          },
+          {
+            "name": "maxPrice",
+            "description": "0 = bez filtera",
+            "in": "query",
+            "required": false,
+            "type": "number",
+            "format": "double"
+          },
+          {
+            "name": "minVolume",
+            "description": "0 = bez filtera",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "sortBy",
+            "description": "\"price\" | \"volume\" | \"change\" | \"ticker\"",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "sortOrder",
+            "description": "\"ASC\" | \"DESC\"",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "maxVolume",
+            "description": "0 = bez filtera (gornja granica volumena)",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "settlementFrom",
+            "description": "Za FUTURE/OPTION: filter po settlement_date u details_json (\"YYYY-MM-DD\"); prazno = bez filtera",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "settlementTo",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/listings/orders": {
+      "post": {
+        "summary": "CreateListingOrder — Client only. Provera raspoloživog stanja; ne knjiži trgovinu (Celina 4).",
+        "operationId": "BankaService_CreateListingOrder",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateListingOrderResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "CreateListingOrderRequest — klijent kreira nalog za hartiju (validacija sredstava).",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateListingOrderRequest"
+            }
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/listings/{id}": {
+      "get": {
+        "summary": "GetListingByID — Client only. Vraća detalje jedne hartije po ID-u.",
+        "operationId": "BankaService_GetListingByID",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListingDetail"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
+    "/bank/listings/{id}/history": {
+      "get": {
+        "summary": "GetListingHistory — Client only. Vraća istoriju dnevnih cena za datu hartiju.",
+        "operationId": "BankaService_GetListingHistory",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetListingHistoryResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "fromDate",
+            "description": "\"YYYY-MM-DD\"; \"\" = bez donje granice",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "toDate",
+            "description": "\"YYYY-MM-DD\"; \"\" = danas",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "BankaService"
+        ]
+      }
+    },
     "/bank/transactions/pending": {
       "get": {
         "summary": "GetPendingActions — Client only. Vraća pending akcije za mobilni.\nMORA biti registrovana POSLE GetPendingAction jer grpc-gateway v2 prepend-uje handlere\n(poslje registrovani imaju prioritet). Statička ruta /pending mora pobediti {id}.",
@@ -1583,6 +1807,50 @@
           "type": "string",
           "format": "int64",
           "title": "ID novokreiranog računa"
+        }
+      }
+    },
+    "v1CreateListingOrderRequest": {
+      "type": "object",
+      "properties": {
+        "accountId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "listingId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "side": {
+          "type": "string",
+          "title": "BUY | SELL"
+        },
+        "orderType": {
+          "type": "string",
+          "title": "MARKET | LIMIT | STOP"
+        },
+        "quantity": {
+          "type": "number",
+          "format": "double"
+        },
+        "limitPrice": {
+          "type": "number",
+          "format": "double",
+          "title": "za LIMIT; 0 inače"
+        },
+        "stopPrice": {
+          "type": "number",
+          "format": "double",
+          "title": "za STOP; 0 inače"
+        }
+      },
+      "description": "CreateListingOrderRequest — klijent kreira nalog za hartiju (validacija sredstava)."
+    },
+    "v1CreateListingOrderResponse": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string"
         }
       }
     },
@@ -2121,6 +2389,34 @@
         }
       }
     },
+    "v1GetListingHistoryResponse": {
+      "type": "object",
+      "properties": {
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ListingHistoryItem"
+          }
+        }
+      }
+    },
+    "v1GetListingsResponse": {
+      "type": "object",
+      "properties": {
+        "listings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ListingListItem"
+          }
+        },
+        "total": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
     "v1GetPaymentHistoryResponse": {
       "type": "object",
       "properties": {
@@ -2212,6 +2508,114 @@
             "type": "object",
             "$ref": "#/definitions/v1Exchange"
           }
+        }
+      }
+    },
+    "v1ListingDetail": {
+      "type": "object",
+      "properties": {
+        "base": {
+          "$ref": "#/definitions/v1ListingListItem"
+        },
+        "nominalValue": {
+          "type": "number",
+          "format": "double"
+        },
+        "contractSize": {
+          "type": "number",
+          "format": "double"
+        },
+        "maintenanceMargin": {
+          "type": "number",
+          "format": "double"
+        },
+        "detailsJson": {
+          "type": "string",
+          "title": "raw JSON za FUTURE/OPTION dodatna polja"
+        }
+      }
+    },
+    "v1ListingHistoryItem": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "title": "\"YYYY-MM-DD\""
+        },
+        "price": {
+          "type": "number",
+          "format": "double"
+        },
+        "askHigh": {
+          "type": "number",
+          "format": "double"
+        },
+        "bidLow": {
+          "type": "number",
+          "format": "double"
+        },
+        "priceChange": {
+          "type": "number",
+          "format": "double"
+        },
+        "volume": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1ListingListItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "ticker": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "listingType": {
+          "type": "string",
+          "title": "\"STOCK\" | \"FOREX\" | \"FUTURE\" | \"OPTION\""
+        },
+        "exchangeId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "price": {
+          "type": "number",
+          "format": "double"
+        },
+        "ask": {
+          "type": "number",
+          "format": "double"
+        },
+        "bid": {
+          "type": "number",
+          "format": "double"
+        },
+        "volume": {
+          "type": "string",
+          "format": "int64"
+        },
+        "changePercent": {
+          "type": "number",
+          "format": "double"
+        },
+        "dollarVolume": {
+          "type": "number",
+          "format": "double"
+        },
+        "initialMarginCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "lastRefresh": {
+          "type": "string",
+          "title": "ISO 8601 string; \"\" ako nikad nije osveženo"
         }
       }
     },
