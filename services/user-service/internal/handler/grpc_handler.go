@@ -737,9 +737,19 @@ func (h *UserHandler) GetAllPermissions(ctx context.Context, _ *pb.GetAllPermiss
 	}
 
 	// ── 3. Map & return ───────────────────────────────────────────────────────
+	// Permisije koje se ne prikazuju u employee checkboxovima:
+	// ADMIN_PERMISSION — implicitna za admina, ne dodeljuje se zaposlenima
+	// TRADE_STOCKS     — klijentska permisija (nema UI dodeljivanja za klijente)
+	// MANAGE_USERS     — admin-nivo kontrola, ne dodeljuje se zaposlenima
+	nonEmployeePerms := map[string]bool{
+		"ADMIN_PERMISSION": true,
+		"TRADE_STOCKS":     true,
+		"MANAGE_USERS":     true,
+	}
+
 	entries := make([]*pb.PermissionEntry, 0, len(rows))
 	for _, r := range rows {
-		if r.PermissionCode == "ADMIN_PERMISSION" {
+		if nonEmployeePerms[r.PermissionCode] {
 			continue
 		}
 		entries = append(entries, &pb.PermissionEntry{
