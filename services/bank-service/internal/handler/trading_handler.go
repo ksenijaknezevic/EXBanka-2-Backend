@@ -282,11 +282,6 @@ func (h *BankHandler) TradingCreateOrder(ctx context.Context, req *pb.TradingCre
 	if marketStatus, msErr := h.berzaService.IsExchangeOpen(ctx, listing.ExchangeID); msErr == nil {
 		domainReq.AfterHours = marketStatus == domain.MarketStatusAfterHours ||
 			marketStatus == domain.MarketStatusClosed
-		// Klijent: ne dozvoljavati novu kupovinu dok je berza potpuno zatvorena (jasna poruka umesto „sistem nedostupan”).
-		if isClient && domainReq.Direction == trading.OrderDirectionBuy &&
-			marketStatus == domain.MarketStatusClosed {
-			return nil, status.Error(codes.FailedPrecondition, "Berza je zatvorena; kupovina trenutno nije moguća. Pokušajte u radnom vremenu tržišta.")
-		}
 	}
 
 	// Menjačnica: prodajni kurs za klijente, srednji za zaposlene — isto kao u funds_manager.

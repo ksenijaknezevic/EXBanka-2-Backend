@@ -23,6 +23,7 @@ package trading
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -293,18 +294,24 @@ func (s *tradingService) CreateOrder(ctx context.Context, req *CreateOrderReques
 		return nil, fmt.Errorf("kreiranje naloga: %w", err)
 	}
 
-	// ── 5. Reserve funds for APPROVED BUY orders ──────────────────────────────
-	// PENDING orders are not reserved yet — funds are reserved when the
-	// supervisor approves them (see ApproveOrder).
-	// FOREX BUY orders skip reservation: currency amounts are not USD-normalised,
-	// and ForexSwap performs a locked balance check at execution time.
-	if status == OrderStatusApproved && req.Direction == OrderDirectionBuy && !req.IsForex {
-		if err := s.reserveFundsForOrder(ctx, order); err != nil {
+	// ── 5. Reserve funds for BUY orders (PENDING and APPROVED) ──────────────
+	// Rezervacija se radi odmah pri kreiranju, bez obzira na to da li nalog
+	// čeka odobrenje (PENDING) ili je odmah odobren. Na taj način banka ne
+	// može da prekorači raspoloživa sredstva kreiranjem više PENDING naloga.
+	// Za forex BUY: rezervišemo na trezoru quote valute (ne USD trezoru).
+	if req.Direction == OrderDirectionBuy {
+		var reserveErr error
+		if req.IsForex {
+			reserveErr = s.reserveForexFundsForOrder(ctx, order)
+		} else {
+			reserveErr = s.reserveFundsForOrder(ctx, order)
+		}
+		if reserveErr != nil {
 			// Order is persisted but reservation failed — cancel it to keep DB consistent.
 			if _, cancelErr := s.orders.Cancel(ctx, order.ID); cancelErr != nil {
 				log.Printf("[trading] auto-otkazivanje naloga %d nakon greške rezervacije: %v", order.ID, cancelErr)
 			}
-			return nil, fmt.Errorf("rezervacija sredstava: %w", err)
+			return nil, fmt.Errorf("rezervacija sredstava: %w", reserveErr)
 		}
 	}
 
@@ -648,16 +655,9 @@ func (s *tradingService) ApproveOrder(ctx context.Context, orderID int64, superv
 	// Potrošnja (used_limit) je već evidentirana atomski u trenutku kreiranja naloga
 	// (IncrementUsedLimitAlways u resolveStatus). Nema duplog inkrementa ovde —
 	// supervisor samo odobrava nalog koji je agent već "platio" iz svog dnevnog limita.
-
-	// Reserve funds now that the order transitions from PENDING to APPROVED.
-	// updated.Quantity is the full original quantity (no fills yet for PENDING orders).
-	if err := s.reserveFundsForOrder(ctx, updated); err != nil {
-		// Revert nalog na PENDING da supervisor može ponovo pokušati odobravanje.
-		if _, revertErr := s.orders.UpdateStatus(ctx, orderID, OrderStatusPending, nil); revertErr != nil {
-			log.Printf("[trading] KRITIČNO: nalog %d je APPROVED bez rezervacije, revert na PENDING nije uspeo: %v", orderID, revertErr)
-		}
-		return nil, fmt.Errorf("rezervacija sredstava pri odobravanju naloga %d: %w", orderID, err)
-	}
+	//
+	// Rezervacija sredstava je takođe već urađena pri kreiranju naloga (i za PENDING naloge),
+	// pa ovde nema ponovne rezervacije.
 
 	return updated, nil
 }
@@ -678,6 +678,15 @@ func (s *tradingService) DeclineOrder(ctx context.Context, orderID int64, superv
 	updated, err := s.orders.UpdateStatus(ctx, orderID, OrderStatusDeclined, &sup)
 	if err != nil {
 		return nil, fmt.Errorf("odbijanje naloga %d: %w", orderID, err)
+	}
+
+	// Oslobodi rezervisana sredstva — rezervacija je urađena pri kreiranju naloga
+	// (i za PENDING naloge), pa je ovde moramo da oslobodimo pri odbijanju.
+	// Za forex: oslobađa sa trezora quote valute; za ostale: sa order.AccountID.
+	if order.Direction == OrderDirectionBuy {
+		if releaseErr := s.releaseFundsForOrder(ctx, order); releaseErr != nil {
+			log.Printf("[trading] oslobađanje rezervacije za odbijeni nalog %d nije uspelo: %v", orderID, releaseErr)
+		}
 	}
 	return updated, nil
 }
@@ -726,13 +735,13 @@ func (s *tradingService) CancelOrder(ctx context.Context, orderID int64, request
 	}
 
 	// Atomično otkaži nalog PRVO — engine odmah prestaje da procesira nalog.
-	// Tek onda oslobodi fondove (samo APPROVED BUY nalozi imaju rezervisana sredstva).
+	// Tek onda oslobodi fondove (BUY nalozi rezervišu sredstva i pri PENDING i pri APPROVED).
 	canceled, err := s.orders.Cancel(ctx, orderID)
 	if err != nil {
 		return nil, fmt.Errorf("otkazivanje naloga %d: %w", orderID, err)
 	}
 
-	if order.Status == OrderStatusApproved && order.Direction == OrderDirectionBuy {
+	if order.Direction == OrderDirectionBuy {
 		if releaseErr := s.releaseFundsForOrder(ctx, order); releaseErr != nil {
 			// Nalog je CANCELED — engine više neće procesirati. Fondovi ostaju locked do cleanup workera.
 			log.Printf("[trading] oslobađanje holdova za otkazani nalog %d nije uspelo: %v", orderID, releaseErr)
@@ -812,14 +821,24 @@ func (s *tradingService) computeNotional(ctx context.Context, order *Order, qty 
 	}
 }
 
-// reserveFundsForOrder reserves the full order notional (based on Quantity) on
-// the account.  Only applicable to BUY orders.  Returns an error so callers can
-// react (cancel the order or log a visible warning) instead of silently skipping.
+// reserveFundsForOrder reserves funds on the account for a BUY order.
+//
+// Klijenti: rezerviše notional + commission (oba se fizički naplaćuju).
+// Agenti/supervizori: rezerviše samo notional — provizija se ne naplaćuje
+// fizički sa bankinog računa pa ne sme da ulazi u rezervaciju.
 func (s *tradingService) reserveFundsForOrder(ctx context.Context, order *Order) error {
 	if order.Direction != OrderDirectionBuy {
 		return nil
 	}
-	total, err := s.computeNotionalPlusCommission(ctx, order, order.Quantity)
+	var (
+		total decimal.Decimal
+		err   error
+	)
+	if order.IsClient {
+		total, err = s.computeNotionalPlusCommission(ctx, order, order.Quantity)
+	} else {
+		total, err = s.computeNotional(ctx, order, order.Quantity)
+	}
 	if err != nil {
 		return fmt.Errorf("izračunavanje iznosa za rezervaciju (nalog %d): %w", order.ID, err)
 	}
@@ -829,14 +848,29 @@ func (s *tradingService) reserveFundsForOrder(ctx context.Context, order *Order)
 	return nil
 }
 
-// releaseFundsForOrder releases the remaining notional (based on RemainingPortions)
-// from the account reservation.  Only applicable to APPROVED BUY orders.
-// Vraća grešku kako bi pozivalac mogao da je propagira ili loguje (BUG-8).
+// releaseFundsForOrder releases the remaining notional from reservation.
+//
+// Za forex BUY: delegira na releaseForexFundsForOrder (quote currency trezor).
+// Klijenti: oslobađa notional + commission (konzistentno sa rezervacijom).
+// Agenti/supervizori: oslobađa samo notional (konzistentno sa rezervacijom).
 func (s *tradingService) releaseFundsForOrder(ctx context.Context, order *Order) error {
 	if order.Direction != OrderDirectionBuy {
 		return nil
 	}
-	total, err := s.computeNotionalPlusCommission(ctx, order, order.RemainingPortions)
+	// Provjeri da li je forex nalog — za forex koristimo posebnu logiku oslobađanja
+	listing, listErr := s.listings.GetListingByID(ctx, order.ListingID)
+	if listErr == nil && listing.ListingType == domain.ListingTypeForex {
+		return s.releaseForexFundsForOrder(ctx, order)
+	}
+	var (
+		total decimal.Decimal
+		err   error
+	)
+	if order.IsClient {
+		total, err = s.computeNotionalPlusCommission(ctx, order, order.RemainingPortions)
+	} else {
+		total, err = s.computeNotional(ctx, order, order.RemainingPortions)
+	}
 	if err != nil {
 		return fmt.Errorf("izračunavanje iznosa za oslobađanje (nalog %d): %w", order.ID, err)
 	}
@@ -844,4 +878,91 @@ func (s *tradingService) releaseFundsForOrder(ctx context.Context, order *Order)
 		return fmt.Errorf("oslobađanje sredstava za nalog %d: %w", order.ID, err)
 	}
 	return nil
+}
+
+// ─── Forex funds helpers ──────────────────────────────────────────────────────
+
+// getForexQuoteCurrency parsira details_json forex listinga i vraća quote valutu.
+func (s *tradingService) getForexQuoteCurrency(ctx context.Context, listingID int64) (string, error) {
+	listing, err := s.listings.GetListingByID(ctx, listingID)
+	if err != nil {
+		return "", fmt.Errorf("dohvatanje forex listinga %d: %w", listingID, err)
+	}
+	var details domain.ForexDetails
+	if err := json.Unmarshal([]byte(listing.DetailsJSON), &details); err != nil {
+		return "", fmt.Errorf("parsiranje forex detalja za listing %d: %w", listingID, err)
+	}
+	if details.QuoteCurrency == "" {
+		return "", fmt.Errorf("listing %d nema quote_currency u details_json", listingID)
+	}
+	return details.QuoteCurrency, nil
+}
+
+// reserveForexFundsForOrder rezerviše debit iznos za forex BUY nalog.
+// Iznos = contractSize × quantity × rate (u quote valuti).
+// Rate: tekući Ask za MARKET/STOP, PricePerUnit za LIMIT/STOP_LIMIT.
+func (s *tradingService) reserveForexFundsForOrder(ctx context.Context, order *Order) error {
+	quoteCurrency, err := s.getForexQuoteCurrency(ctx, order.ListingID)
+	if err != nil {
+		return err
+	}
+
+	var rate decimal.Decimal
+	switch order.OrderType {
+	case OrderTypeMarket, OrderTypeStop:
+		listing, err := s.listings.GetListingByID(ctx, order.ListingID)
+		if err != nil {
+			return fmt.Errorf("dohvatanje cene za forex rezervaciju: %w", err)
+		}
+		rate = decimal.NewFromFloat(listing.Ask)
+	case OrderTypeLimit, OrderTypeStopLimit:
+		if order.PricePerUnit == nil {
+			return ErrLimitPriceRequired
+		}
+		rate = *order.PricePerUnit
+	default:
+		return fmt.Errorf("%w: %s", ErrInvalidOrderType, order.OrderType)
+	}
+	if rate.IsZero() {
+		return fmt.Errorf("forex rezervacija: rate je nula za listing %d", order.ListingID)
+	}
+
+	nominalBase := decimal.NewFromInt(int64(order.ContractSize)).Mul(decimal.NewFromInt(int64(order.Quantity)))
+	debitAmount := nominalBase.Mul(rate)
+
+	return s.funds.ReserveForexFunds(ctx, order.UserID, order.AccountID, quoteCurrency, debitAmount)
+}
+
+// releaseForexFundsForOrder oslobađa rezervisana sredstva za forex BUY nalog.
+// Iznos = contractSize × remainingPortions × rate (u quote valuti).
+func (s *tradingService) releaseForexFundsForOrder(ctx context.Context, order *Order) error {
+	quoteCurrency, err := s.getForexQuoteCurrency(ctx, order.ListingID)
+	if err != nil {
+		return err
+	}
+
+	var rate decimal.Decimal
+	switch order.OrderType {
+	case OrderTypeMarket, OrderTypeStop:
+		listing, err := s.listings.GetListingByID(ctx, order.ListingID)
+		if err != nil {
+			return fmt.Errorf("dohvatanje cene za forex oslobađanje: %w", err)
+		}
+		rate = decimal.NewFromFloat(listing.Ask)
+	case OrderTypeLimit, OrderTypeStopLimit:
+		if order.PricePerUnit == nil {
+			return ErrLimitPriceRequired
+		}
+		rate = *order.PricePerUnit
+	default:
+		return fmt.Errorf("%w: %s", ErrInvalidOrderType, order.OrderType)
+	}
+	if rate.IsZero() {
+		return nil // nema šta da se oslobodi
+	}
+
+	nominalBase := decimal.NewFromInt(int64(order.ContractSize)).Mul(decimal.NewFromInt(int64(order.RemainingPortions)))
+	debitAmount := nominalBase.Mul(rate)
+
+	return s.funds.ReleaseForexFunds(ctx, order.UserID, order.AccountID, quoteCurrency, debitAmount)
 }

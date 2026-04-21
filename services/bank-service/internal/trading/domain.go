@@ -376,6 +376,17 @@ type FundsManager interface {
 	// Returns the original amount if the USD rate cannot be fetched.
 	ConvertUSDToRSD(ctx context.Context, usdAmount decimal.Decimal) (decimal.Decimal, error)
 
+	// ReserveForexFunds reserves the BUY debit amount for a forex order.
+	// For employees: looks up the bank's trezor account for quoteCurrency automatically.
+	// For clients: validates fromAccountID has quoteCurrency and reserves there.
+	// amount is in quoteCurrency (no USD conversion applied).
+	// Returns ErrInsufficientFunds if free balance is insufficient.
+	ReserveForexFunds(ctx context.Context, userID int64, fromAccountID int64, quoteCurrency string, amount decimal.Decimal) error
+
+	// ReleaseForexFunds releases a previously reserved forex BUY amount.
+	// Mirrors ReserveForexFunds in account resolution. Uses GREATEST(0,...) guard.
+	ReleaseForexFunds(ctx context.Context, userID int64, fromAccountID int64, quoteCurrency string, amount decimal.Decimal) error
+
 	// ForexSwap atomically executes a currency swap for a forex order.
 	//
 	// direction=BUY:  debit (nominalBase × rate) from fromAccount (QUOTE currency),
@@ -386,6 +397,8 @@ type FundsManager interface {
 	// fromAccountID is the AccountID stored on the order (the "debit" account).
 	// The counterpart account is found automatically among the user's active accounts.
 	// Both accounts are locked in id-ASC order before balances are validated (TOCTOU fix).
+	// The debit account's rezervisana_sredstva is decremented along with stanje_racuna
+	// to release any prior reservation made by ReserveForexFunds.
 	//
 	// Decline-class errors (order should be set to DECLINED):
 	//   ErrForexAccountNotFound, ErrForexCurrencyMismatch,

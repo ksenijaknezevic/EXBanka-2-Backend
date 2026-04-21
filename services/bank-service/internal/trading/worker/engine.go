@@ -550,6 +550,10 @@ func commissionForOrderType(ot trading.OrderType, fullNotional decimal.Decimal) 
 // kada je berza zatvorena i čekamo na otvaranje.
 const exchangeCheckInterval = 60 * time.Second
 
+// afterHoursClosedDelay je dodatno kašnjenje između svaka dva fill-a za AfterHours naloge
+// kada je berza CLOSED (vikend/praznik/noć). Nalog se ne blokira — izvršava se, ali sporije.
+const afterHoursClosedDelay = 30 * time.Minute
+
 // waitForExchangeOpen blokira dok berza za dati exchangeID nije otvorena (OPEN).
 // Ponavlja proveru svakih exchangeCheckInterval sekundi.
 // Vraća false (bez greške) ako je ctx otkazan dok čekamo.
@@ -581,6 +585,19 @@ func (e *Engine) waitForExchangeOpen(ctx context.Context, exchangeID int64) (boo
 		case <-time.After(exchangeCheckInterval):
 		}
 	}
+}
+
+// isExchangeClosed vraća true ako je berza trenutno zatvorena (CLOSED).
+// Ako je exchange checker nil ili dođe do greške, smatra se da je otvorena (konzervativno).
+func (e *Engine) isExchangeClosed(ctx context.Context, exchangeID int64) bool {
+	if e.exchange == nil || exchangeID <= 0 {
+		return false
+	}
+	s, err := e.exchange.IsExchangeOpen(ctx, exchangeID)
+	if err != nil {
+		return false
+	}
+	return s == domain.MarketStatusClosed
 }
 
 // ─── Execution loop ───────────────────────────────────────────────────────────
@@ -624,15 +641,37 @@ func (e *Engine) executeOrder(ctx context.Context, order *trading.Order, effecti
 		}
 
 		// ── Provera da li je berza otvorena ──────────────────────────────────────
-		// Fill se ne sme izvršiti dok berza nije OPEN — čak i ako je nalog APPROVED.
-		// Goroutina blokira ovde dok se berza ne otvori ili dok se nalog ne otkaže.
-		open, err := e.waitForExchangeOpen(ctx, snapshot.ExchangeID)
-		if err != nil {
-			return err
-		}
-		if !open {
-			// ctx je otkazan — engine se gasi.
-			return nil
+		// Za AfterHours naloge (kreirani dok je berza bila CLOSED/AFTER_HOURS):
+		//   - Ako je berza sada OPEN/PRE_MARKET/AFTER_HOURS → izvršava se normalno.
+		//   - Ako je berza još uvek CLOSED → dodaj 30-minutno kašnjenje pre ovog fill-a
+		//     (ne blokira indefinitivno; nalog se izvršava sporije dok berza nije otvorena).
+		// Za obične naloge: blokira dok se berza ne otvori (staro ponašanje).
+		if current.AfterHours && e.isExchangeClosed(ctx, snapshot.ExchangeID) {
+			log.Printf("[trading/engine] order %d: AfterHours nalog — berza zatvorena, čekanje %s pre sledećeg fill-a",
+				current.ID, afterHoursClosedDelay)
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(afterHoursClosedDelay):
+			}
+			// Re-fetch posle čekanja — nalog možda otkazan tokom čekanja.
+			current, err = e.orders.GetByID(ctx, order.ID)
+			if err != nil {
+				return err
+			}
+			if current.Status != trading.OrderStatusApproved || current.IsDone {
+				log.Printf("[trading/engine] order %d: otkazan tokom AfterHours čekanja — izlaz", order.ID)
+				return nil
+			}
+		} else {
+			open, err := e.waitForExchangeOpen(ctx, snapshot.ExchangeID)
+			if err != nil {
+				return err
+			}
+			if !open {
+				// ctx je otkazan — engine se gasi.
+				return nil
+			}
 		}
 
 		// Re-fetch posle potencijalnog dugog čekanja — nalog možda otkazan tokom čekanja.

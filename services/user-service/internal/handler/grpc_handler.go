@@ -1168,10 +1168,10 @@ func (h *UserHandler) CreateClient(ctx context.Context, req *pb.CreateClientRequ
 
 // GetClientByID returns the full profile of a single client for the employee portal.
 //
-// Authorization: EMPLOYEE only — this is a staff-facing endpoint.
+// Authorization: EMPLOYEE or ADMIN — staff-facing endpoint.
 //
 // Flow:
-//  1. EMPLOYEE-only guard via JWT claims.
+//  1. EMPLOYEE/ADMIN guard via JWT claims.
 //  2. Validate id is non-zero — InvalidArgument otherwise.
 //  3. Delegate to clientSvc.GetClientByID — returns ErrClientNotFound when the ID
 //     is unknown or the user_type is not CLIENT.
@@ -1179,10 +1179,10 @@ func (h *UserHandler) CreateClient(ctx context.Context, req *pb.CreateClientRequ
 //
 // Mapped to: GET /client/{id}
 func (h *UserHandler) GetClientByID(ctx context.Context, req *pb.GetClientByIDRequest) (*pb.GetClientByIDResponse, error) {
-	// ── 1. Authorization — EMPLOYEE only ──────────────────────────────────────
+	// ── 1. Authorization — EMPLOYEE or ADMIN ──────────────────────────────────
 	claims, ok := auth.ClaimsFromContext(ctx)
-	if !ok || claims.UserType != "EMPLOYEE" {
-		return nil, status.Errorf(codes.PermissionDenied, "only employees can view client details")
+	if !ok || (claims.UserType != "EMPLOYEE" && claims.UserType != "ADMIN") {
+		return nil, status.Errorf(codes.PermissionDenied, "only employees or admins can view client details")
 	}
 
 	// ── 2. Input validation ───────────────────────────────────────────────────

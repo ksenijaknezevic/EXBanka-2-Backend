@@ -1104,11 +1104,17 @@ func TestGetClientByID(t *testing.T) {
 			wantCode: codes.PermissionDenied,
 		},
 		{
-			name:     "permission denied — admin caller",
-			ctx:      testutil.AdminContext(),
-			req:      &pb.GetClientByIDRequest{Id: 42},
-			setup:    func(svc *mocks.MockClientService) {},
-			wantCode: codes.PermissionDenied,
+			name: "success — admin caller",
+			ctx:  testutil.AdminContext(),
+			req:  &pb.GetClientByIDRequest{Id: 42},
+			setup: func(svc *mocks.MockClientService) {
+				svc.On("GetClientByID", mock.Anything, int64(42)).Return(fullClient, nil)
+			},
+			wantCode: codes.OK,
+			checkResp: func(t *testing.T, r *pb.GetClientByIDResponse) {
+				require.NotNil(t, r.Client)
+				assert.Equal(t, int64(42), r.Client.Id)
+			},
 		},
 		{
 			name:     "invalid argument — zero id",

@@ -296,6 +296,36 @@ func (_m *MockQuerier) GetVerificationToken(ctx context.Context, token string) (
 	return r0, r1
 }
 
+// ListClients provides a mock function with given fields: ctx, arg
+func (_m *MockQuerier) ListClients(ctx context.Context, arg sqlc.ListClientsParams) ([]sqlc.ListClientsRow, error) {
+	ret := _m.Called(ctx, arg)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListClients")
+	}
+
+	var r0 []sqlc.ListClientsRow
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, sqlc.ListClientsParams) ([]sqlc.ListClientsRow, error)); ok {
+		return rf(ctx, arg)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, sqlc.ListClientsParams) []sqlc.ListClientsRow); ok {
+		r0 = rf(ctx, arg)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]sqlc.ListClientsRow)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, sqlc.ListClientsParams) error); ok {
+		r1 = rf(ctx, arg)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // ListEmployees provides a mock function with given fields: ctx, arg
 func (_m *MockQuerier) ListEmployees(ctx context.Context, arg sqlc.ListEmployeesParams) ([]sqlc.ListEmployeesRow, error) {
 	ret := _m.Called(ctx, arg)
@@ -342,36 +372,6 @@ func (_m *MockQuerier) MarkVerificationTokenUsed(ctx context.Context, id int64) 
 	}
 
 	return r0
-}
-
-// ListClients provides a mock function with given fields: ctx, arg
-func (_m *MockQuerier) ListClients(ctx context.Context, arg sqlc.ListClientsParams) ([]sqlc.ListClientsRow, error) {
-	ret := _m.Called(ctx, arg)
-
-	if len(ret) == 0 {
-		panic("no return value specified for ListClients")
-	}
-
-	var r0 []sqlc.ListClientsRow
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, sqlc.ListClientsParams) ([]sqlc.ListClientsRow, error)); ok {
-		return rf(ctx, arg)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context, sqlc.ListClientsParams) []sqlc.ListClientsRow); ok {
-		r0 = rf(ctx, arg)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]sqlc.ListClientsRow)
-		}
-	}
-
-	if rf, ok := ret.Get(1).(func(context.Context, sqlc.ListClientsParams) error); ok {
-		r1 = rf(ctx, arg)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
 }
 
 // SearchClients provides a mock function with given fields: ctx, arg
