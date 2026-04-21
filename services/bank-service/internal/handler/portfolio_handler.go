@@ -108,6 +108,7 @@ type holdingResponse struct {
 	LastModified      string  `json:"lastModified"`
 	AccountID         string  `json:"accountId"`
 	PublicShares      int     `json:"publicShares"`
+	PublicQuantity    int     `json:"publicQuantity"`
 	DetailsJSON       string  `json:"detailsJson"`
 }
 
@@ -281,6 +282,7 @@ func (h *PortfolioHandler) getMyPortfolio(w http.ResponseWriter, r *http.Request
 			available = 0
 		}
 
+		pub := pubMap[row.ListingID]
 		holdings = append(holdings, holdingResponse{
 			ListingID:         strconv.FormatInt(row.ListingID, 10),
 			Ticker:            listing.Ticker,
@@ -293,7 +295,8 @@ func (h *PortfolioHandler) getMyPortfolio(w http.ResponseWriter, r *http.Request
 			Profit:            profit,
 			LastModified:      row.LastModified.UTC().Format(time.RFC3339),
 			AccountID:         strconv.FormatInt(row.AccountID, 10),
-			PublicShares:      pubMap[row.ListingID],
+			PublicShares:      pub,
+			PublicQuantity:    pub,
 			DetailsJSON:       listing.DetailsJSON,
 		})
 	}

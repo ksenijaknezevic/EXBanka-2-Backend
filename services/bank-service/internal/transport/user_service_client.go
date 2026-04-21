@@ -82,6 +82,29 @@ func (c *UserServiceClient) GetClientInfo(ctx context.Context, clientID int64) (
 	}, nil
 }
 
+// GetEmployeeInfo calls GetEmployeeByID on user-service and returns the
+// employee's first name, last name and email. Used for actuary lookups where
+// GetClientByID would return NOT_FOUND because the user is EMPLOYEE-type.
+//
+// Returns the gRPC error as-is so the caller can inspect the status code:
+//   - codes.NotFound         → employee does not exist
+//   - codes.PermissionDenied → caller lacks Admin / MANAGE_USERS / SUPERVISOR
+func (c *UserServiceClient) GetEmployeeInfo(ctx context.Context, employeeID int64) (*ClientInfo, error) {
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
+	resp, err := c.client.GetEmployeeByID(ctx, &userv1.GetEmployeeByIDRequest{Id: employeeID})
+	if err != nil {
+		return nil, err
+	}
+	u := resp.GetEmployee().GetUser()
+	return &ClientInfo{
+		FirstName: u.GetFirstName(),
+		LastName:  u.GetLastName(),
+		Email:     u.GetEmail(),
+	}, nil
+}
+
 // GetClientName calls GetClientByID on user-service and returns the client's
 // first and last name. The caller should use a context with an appropriate timeout.
 //

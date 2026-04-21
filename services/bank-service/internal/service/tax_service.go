@@ -839,11 +839,20 @@ func (s *TaxService) ListTaxEligibleUsers(ctx context.Context, filter TaxUserFil
 
 		first, last, email := "", "", ""
 		if s.userClient != nil {
-			info, err := s.userClient.GetClientInfo(ctx, uid)
-			if err == nil && info != nil {
-				first = info.FirstName
-				last = info.LastName
-				email = info.Email
+			// Aktuari su EMPLOYEE-tip i GetClientByID bi vratio NOT_FOUND za njih —
+			// biramo endpoint po user tipu pre nego što pošaljemo RPC.
+			if ut == "ACTUARY" {
+				if info, err := s.userClient.GetEmployeeInfo(ctx, uid); err == nil && info != nil {
+					first = info.FirstName
+					last = info.LastName
+					email = info.Email
+				}
+			} else {
+				if info, err := s.userClient.GetClientInfo(ctx, uid); err == nil && info != nil {
+					first = info.FirstName
+					last = info.LastName
+					email = info.Email
+				}
 			}
 		}
 
