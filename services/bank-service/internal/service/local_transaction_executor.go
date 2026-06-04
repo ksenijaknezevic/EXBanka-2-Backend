@@ -176,12 +176,23 @@ func (e *LocalTransactionExecutor) validatePosting(ctx context.Context, p domain
 		return nil
 
 	case domain.AccountKindPerson:
-		// PERSON: ne prozivamo postojanje sa kompletnom validacijom — samo
-		// proveravamo da je asset poznat (MONAS/STOCK) i polje validno.
+		// PERSON: za MONAS razrešavamo stvarni račun (id_vlasnika + valuta) i
+		// proveravamo sredstva za debit; za STOCK dovoljnost akcija u javnom režimu.
 		switch p.Asset.Type {
 		case domain.AssetTypeMonas:
 			if p.Asset.MonAs == nil {
 				return &domain.NoVoteReason{Reason: domain.NoReasonNoSuchAsset}
+			}
+			acc, found := e.resolvePersonAccount(ctx, e.db, p.Account.ID.ID, p.Asset.MonAs.Currency)
+			if !found {
+				return &domain.NoVoteReason{Reason: domain.NoReasonNoSuchAccount}
+			}
+			// Negativan amount = skidanje (npr. premija kupcu) → dovoljnost sredstava.
+			if p.Amount.IsNegative() {
+				avail := acc.Stanje.Sub(acc.Rezervisana)
+				if avail.LessThan(p.Amount.Abs()) {
+					return &domain.NoVoteReason{Reason: domain.NoReasonInsufficientAsset}
+				}
 			}
 			return nil
 		case domain.AssetTypeStock:
@@ -290,51 +301,33 @@ func (e *LocalTransactionExecutor) reservePosting(ctx context.Context, dbTx *gor
 		res.Reserved = true
 	}
 
-	// PERSON + STOCK negativ: spustimo public_shares.quantity.
+	// PERSON + STOCK negativ: spustimo public_shares.quantity (FIFO).
 	if p.Account.Type == domain.AccountKindPerson && p.Asset.Type == domain.AssetTypeStock && p.Amount.IsNegative() {
 		userID, _ := strconv.ParseInt(p.Account.ID.ID, 10, 64)
-		amount := p.Amount.Abs().IntPart()
-		// FIFO smanjenje — uzmi najstarije redove dok ne pokrijemo.
-		// (Pojednostavljeno; idealno bi se uradio FOR UPDATE.)
-		var rows []struct {
-			ID       int64 `gorm:"column:id"`
-			Quantity int32 `gorm:"column:quantity"`
-		}
-		if err := dbTx.Raw(`
-			SELECT ps.id, ps.quantity
-			FROM core_banking.public_shares ps
-			JOIN core_banking.listing l ON l.id = ps.listing_id
-			WHERE ps.user_id = ? AND l.ticker = ?
-			ORDER BY ps.created_at ASC
-			FOR UPDATE
-		`, userID, p.Asset.Stock.Ticker).Scan(&rows).Error; err != nil {
-			return fmt.Errorf("zaključavanje public_shares: %w", err)
-		}
-		remaining := amount
-		for _, row := range rows {
-			if remaining <= 0 {
-				break
-			}
-			take := int64(row.Quantity)
-			if take > remaining {
-				take = remaining
-			}
-			newQty := int64(row.Quantity) - take
-			if newQty == 0 {
-				if err := dbTx.Exec(`DELETE FROM core_banking.public_shares WHERE id = ?`, row.ID).Error; err != nil {
-					return err
-				}
-			} else {
-				if err := dbTx.Exec(`UPDATE core_banking.public_shares SET quantity = ? WHERE id = ?`, newQty, row.ID).Error; err != nil {
-					return err
-				}
-			}
-			remaining -= take
-		}
-		if remaining > 0 {
-			return fmt.Errorf("nedovoljno akcija u javnom režimu")
+		if err := decrementPublicShares(dbTx, userID, p.Asset.Stock.Ticker, p.Amount.Abs().IntPart()); err != nil {
+			return err
 		}
 		res.Reserved = true
+	}
+
+	// PERSON + MONAS: razreši račun korisnika; za debit rezerviši sredstva (kao za
+	// ACCOUNT). AccountNum se pamti da bi Commit/Rollback knjižili nad tim računom.
+	if p.Account.Type == domain.AccountKindPerson && p.Asset.Type == domain.AssetTypeMonas {
+		acc, found := e.resolvePersonAccount(ctx, dbTx, p.Account.ID.ID, p.Asset.MonAs.Currency)
+		if !found {
+			return fmt.Errorf("rezervacija: račun korisnika %s (%s) nije pronađen", p.Account.ID.ID, p.Asset.MonAs.Currency)
+		}
+		res.AccountNum = &acc.BrojRacuna
+		if p.Amount.IsNegative() {
+			if err := dbTx.Exec(`
+				UPDATE core_banking.racun
+				SET rezervisana_sredstva = rezervisana_sredstva + ?
+				WHERE broj_racuna = ?
+			`, p.Amount.Abs(), acc.BrojRacuna).Error; err != nil {
+				return fmt.Errorf("rezervacija premije: %w", err)
+			}
+			res.Reserved = true
+		}
 	}
 
 	return e.repo.CreateReservation(ctx, &res)
@@ -354,7 +347,7 @@ func (e *LocalTransactionExecutor) Commit(ctx context.Context, ibTxID int64) err
 
 	return e.db.WithContext(ctx).Transaction(func(dbTx *gorm.DB) error {
 		for _, r := range resvs {
-			if r.AccountKind == domain.AccountKindAccount && r.AssetType == domain.AssetTypeMonas {
+			if (r.AccountKind == domain.AccountKindAccount || r.AccountKind == domain.AccountKindPerson) && r.AssetType == domain.AssetTypeMonas && r.AccountNum != nil {
 				// Negativan iznos = skidanje, pozitivan = doplata.
 				if r.Amount.IsNegative() {
 					abs := r.Amount.Abs()
@@ -423,7 +416,7 @@ func (e *LocalTransactionExecutor) Rollback(ctx context.Context, ibTxID int64) e
 			if !r.Reserved {
 				continue
 			}
-			if r.AccountKind == domain.AccountKindAccount && r.AssetType == domain.AssetTypeMonas && r.Amount.IsNegative() {
+			if (r.AccountKind == domain.AccountKindAccount || r.AccountKind == domain.AccountKindPerson) && r.AssetType == domain.AssetTypeMonas && r.AccountNum != nil && r.Amount.IsNegative() {
 				abs := r.Amount.Abs()
 				if err := dbTx.Exec(`
 					UPDATE core_banking.racun
@@ -451,6 +444,102 @@ func (e *LocalTransactionExecutor) Rollback(ctx context.Context, ibTxID int64) e
 		}
 		return e.repo.UpdateTransactionStatus(ctx, ibTxID, domain.TxStatusRolledBack, "ROLLED_BACK", "")
 	})
+}
+
+// ─── Escrow akcija (blokada na accept, oslobađanje na exercise/istek) ─────────
+
+// BlockShares skida `amount` akcija sa korisnikovih public_shares (FIFO).
+// Koristi se na accept-u OTC ponude da se akcije prodavca zaključaju za ugovor.
+func (e *LocalTransactionExecutor) BlockShares(ctx context.Context, userID int64, ticker string, amount int32) error {
+	return e.db.WithContext(ctx).Transaction(func(dbTx *gorm.DB) error {
+		return decrementPublicShares(dbTx, userID, ticker, int64(amount))
+	})
+}
+
+// ReleaseShares vraća `amount` akcija u public_shares korisnika (kompenzacija
+// neuspele premije ili oslobađanje na istek ugovora).
+func (e *LocalTransactionExecutor) ReleaseShares(ctx context.Context, userID int64, ticker string, amount int32) error {
+	var listingID int64
+	if err := e.db.WithContext(ctx).Raw(`SELECT id FROM core_banking.listing WHERE ticker = ?`, ticker).Scan(&listingID).Error; err != nil {
+		return err
+	}
+	if listingID == 0 {
+		return fmt.Errorf("listing ne postoji za ticker: %s", ticker)
+	}
+	return e.db.WithContext(ctx).Exec(`
+		INSERT INTO core_banking.public_shares (listing_id, user_id, quantity)
+		VALUES (?, ?, ?)
+	`, listingID, userID, amount).Error
+}
+
+// personAccount — razrešeni račun korisnika za PERSON+MONAS knjiženja.
+type personAccount struct {
+	BrojRacuna  string          `gorm:"column:broj_racuna"`
+	Stanje      decimal.Decimal `gorm:"column:stanje_racuna"`
+	Rezervisana decimal.Decimal `gorm:"column:rezervisana_sredstva"`
+}
+
+// resolvePersonAccount mapira PERSON (user id + valuta) na njegov aktivni račun
+// te valute. Vraća (račun, true) ako postoji.
+func (e *LocalTransactionExecutor) resolvePersonAccount(ctx context.Context, db *gorm.DB, personID, currency string) (personAccount, bool) {
+	var acc personAccount
+	uid, err := strconv.ParseInt(personID, 10, 64)
+	if err != nil {
+		return acc, false
+	}
+	db.WithContext(ctx).Raw(`
+		SELECT r.broj_racuna, r.stanje_racuna, r.rezervisana_sredstva
+		FROM core_banking.racun r
+		JOIN core_banking.valuta v ON v.id = r.id_valute
+		WHERE r.id_vlasnika = ? AND v.oznaka = ? AND r.status = 'AKTIVAN'
+		ORDER BY r.id ASC
+		LIMIT 1
+	`, uid, currency).Scan(&acc)
+	return acc, acc.BrojRacuna != ""
+}
+
+// decrementPublicShares FIFO-smanjuje korisnikove public_shares za `amount`
+// akcija datog tickera (najstariji redovi prvi). Greška ako nema dovoljno.
+func decrementPublicShares(dbTx *gorm.DB, userID int64, ticker string, amount int64) error {
+	var rows []struct {
+		ID       int64 `gorm:"column:id"`
+		Quantity int32 `gorm:"column:quantity"`
+	}
+	if err := dbTx.Raw(`
+		SELECT ps.id, ps.quantity
+		FROM core_banking.public_shares ps
+		JOIN core_banking.listing l ON l.id = ps.listing_id
+		WHERE ps.user_id = ? AND l.ticker = ?
+		ORDER BY ps.created_at ASC
+		FOR UPDATE
+	`, userID, ticker).Scan(&rows).Error; err != nil {
+		return fmt.Errorf("zaključavanje public_shares: %w", err)
+	}
+	remaining := amount
+	for _, row := range rows {
+		if remaining <= 0 {
+			break
+		}
+		take := int64(row.Quantity)
+		if take > remaining {
+			take = remaining
+		}
+		newQty := int64(row.Quantity) - take
+		if newQty == 0 {
+			if err := dbTx.Exec(`DELETE FROM core_banking.public_shares WHERE id = ?`, row.ID).Error; err != nil {
+				return err
+			}
+		} else {
+			if err := dbTx.Exec(`UPDATE core_banking.public_shares SET quantity = ? WHERE id = ?`, newQty, row.ID).Error; err != nil {
+				return err
+			}
+		}
+		remaining -= take
+	}
+	if remaining > 0 {
+		return fmt.Errorf("nedovoljno akcija u javnom režimu")
+	}
+	return nil
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

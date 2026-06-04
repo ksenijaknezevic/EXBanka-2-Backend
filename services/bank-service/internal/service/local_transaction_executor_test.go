@@ -417,21 +417,69 @@ func TestPtrTime(t *testing.T) {
 
 // ─── validatePosting — PERSON + MONAS (no DB) ─────────────────────────────────
 
-func TestValidatePosting_PersonMonas_Valid(t *testing.T) {
-	db, _ := newGormDB(t)
+// E1: PERSON + MONAS sada razrešava stvarni račun (id_vlasnika + valuta) i
+// proverava sredstva za debit. Credit zahteva samo da račun postoji.
+
+func personMonasPosting(routing int64, id string, amount float64, currency string) domain.Posting {
+	return domain.Posting{
+		Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: &domain.ForeignBankId{RoutingNumber: routing, ID: id}},
+		Amount:  decimal.NewFromFloat(amount),
+		Asset:   domain.Asset{Type: domain.AssetTypeMonas, MonAs: &domain.MonetaryAsset{Currency: currency}},
+	}
+}
+
+func personAccountRows(mock sqlmock.Sqlmock, brojRacuna, stanje, rezervisana string) *sqlmock.Rows {
+	return mock.NewRows([]string{"broj_racuna", "stanje_racuna", "rezervisana_sredstva"}).
+		AddRow(brojRacuna, stanje, rezervisana)
+}
+
+func TestValidatePosting_PersonMonas_CreditValid(t *testing.T) {
+	db, dbMock := newGormDB(t)
 	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 111, "265")
 	ctx := context.Background()
 
-	p := domain.Posting{
-		Account: domain.TxAccount{
-			Type: domain.AccountKindPerson,
-			ID:   &domain.ForeignBankId{RoutingNumber: 111, ID: "u1"},
-		},
-		Amount: decimal.NewFromFloat(100),
-		Asset:  domain.Asset{Type: domain.AssetTypeMonas, MonAs: &domain.MonetaryAsset{Currency: "USD"}},
-	}
-	reason := e.validatePosting(ctx, p)
+	dbMock.ExpectQuery("SELECT r.broj_racuna").WillReturnRows(personAccountRows(dbMock, "265001000001", "1000", "0"))
+
+	reason := e.validatePosting(ctx, personMonasPosting(111, "1", 100, "USD"))
 	assert.Nil(t, reason)
+	require.NoError(t, dbMock.ExpectationsWereMet())
+}
+
+func TestValidatePosting_PersonMonas_DebitSufficient(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 111, "265")
+	ctx := context.Background()
+
+	dbMock.ExpectQuery("SELECT r.broj_racuna").WillReturnRows(personAccountRows(dbMock, "265001000001", "1000", "0"))
+
+	reason := e.validatePosting(ctx, personMonasPosting(111, "1", -100, "USD"))
+	assert.Nil(t, reason)
+	require.NoError(t, dbMock.ExpectationsWereMet())
+}
+
+func TestValidatePosting_PersonMonas_DebitInsufficient(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 111, "265")
+	ctx := context.Background()
+
+	dbMock.ExpectQuery("SELECT r.broj_racuna").WillReturnRows(personAccountRows(dbMock, "265001000001", "50", "0"))
+
+	reason := e.validatePosting(ctx, personMonasPosting(111, "1", -100, "USD"))
+	require.NotNil(t, reason)
+	assert.Equal(t, domain.NoReasonInsufficientAsset, reason.Reason)
+}
+
+func TestValidatePosting_PersonMonas_NoAccount(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 111, "265")
+	ctx := context.Background()
+
+	dbMock.ExpectQuery("SELECT r.broj_racuna").WillReturnRows(
+		dbMock.NewRows([]string{"broj_racuna", "stanje_racuna", "rezervisana_sredstva"}))
+
+	reason := e.validatePosting(ctx, personMonasPosting(111, "1", -100, "USD"))
+	require.NotNil(t, reason)
+	assert.Equal(t, domain.NoReasonNoSuchAccount, reason.Reason)
 }
 
 func TestValidatePosting_PersonMonas_NilMonAs(t *testing.T) {
@@ -977,5 +1025,169 @@ func TestRollback_NotReserved_Skipped(t *testing.T) {
 
 	err := e.Rollback(ctx, 21)
 	require.NoError(t, err)
+	require.NoError(t, dbMock.ExpectationsWereMet())
+}
+
+// ─── E1: Prepare/Commit za PERSON + MONAS ─────────────────────────────────────
+
+func TestPrepare_LocalPersonMonasDebit_ReservesVoteYes(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	repo := &mockInterbankRepoForExecutor{}
+	e := NewLocalTransactionExecutor(db, repo, 111, "265")
+	ctx := context.Background()
+
+	usd := domain.Asset{Type: domain.AssetTypeMonas, MonAs: &domain.MonetaryAsset{Currency: "USD"}}
+	localBuyer := &domain.ForeignBankId{RoutingNumber: 111, ID: "1"}   // naš kupac → debit (lokalno)
+	remoteSeller := &domain.ForeignBankId{RoutingNumber: 222, ID: "2"} // prodavac na drugoj banci → skip
+	tx := domain.Transaction{
+		Postings: []domain.Posting{
+			{Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: localBuyer}, Amount: decimal.NewFromInt(-5), Asset: usd},
+			{Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: remoteSeller}, Amount: decimal.NewFromInt(5), Asset: usd},
+		},
+	}
+
+	// validate: razreši lokalni račun kupca
+	dbMock.ExpectQuery("SELECT r.broj_racuna").WillReturnRows(personAccountRows(dbMock, "265001000001", "1000", "0"))
+	// reserve loop: razreši opet + UPDATE rezervisana
+	dbMock.ExpectBegin()
+	dbMock.ExpectQuery("SELECT r.broj_racuna").WillReturnRows(personAccountRows(dbMock, "265001000001", "1000", "0"))
+	dbMock.ExpectExec("UPDATE core_banking.racun SET rezervisana_sredstva").WillReturnResult(sqlmock.NewResult(1, 1))
+	repo.On("CreateReservation", ctx, mock.Anything).Return(nil).Times(1)
+	dbMock.ExpectCommit()
+
+	vote, err := e.Prepare(ctx, 1, tx)
+	require.NoError(t, err)
+	assert.Equal(t, domain.VoteYes, vote.Vote)
+	require.NoError(t, dbMock.ExpectationsWereMet())
+}
+
+func TestCommit_PersonMonasNegative(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	repo := &mockInterbankRepoForExecutor{}
+	e := NewLocalTransactionExecutor(db, repo, 111, "265")
+	ctx := context.Background()
+
+	num := "265001000001"
+	resv := domain.InterbankReservation{
+		InterbankTransactionID: 30,
+		AccountKind:            domain.AccountKindPerson,
+		AssetType:              domain.AssetTypeMonas,
+		Amount:                 decimal.NewFromInt(-5),
+		AccountNum:             &num,
+		Reserved:               true,
+	}
+	repo.On("ListReservationsByTx", ctx, int64(30)).Return([]domain.InterbankReservation{resv}, nil)
+
+	dbMock.ExpectBegin()
+	dbMock.ExpectExec("UPDATE core_banking.racun").WillReturnResult(sqlmock.NewResult(1, 1))
+	dbMock.ExpectQuery("SELECT id FROM core_banking.racun WHERE broj_racuna").
+		WillReturnRows(dbMock.NewRows([]string{"id"}).AddRow(int64(42)))
+	dbMock.ExpectExec("INSERT INTO core_banking.transakcija").WillReturnResult(sqlmock.NewResult(1, 1))
+	repo.On("UpdateTransactionStatus", ctx, int64(30), domain.TxStatusCommitted, "COMMITTED", "").Return(nil)
+	dbMock.ExpectCommit()
+
+	require.NoError(t, e.Commit(ctx, 30))
+	require.NoError(t, dbMock.ExpectationsWereMet())
+}
+
+func TestCommit_PersonMonasPositive(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	repo := &mockInterbankRepoForExecutor{}
+	e := NewLocalTransactionExecutor(db, repo, 111, "265")
+	ctx := context.Background()
+
+	num := "265001000002"
+	resv := domain.InterbankReservation{
+		InterbankTransactionID: 31,
+		AccountKind:            domain.AccountKindPerson,
+		AssetType:              domain.AssetTypeMonas,
+		Amount:                 decimal.NewFromInt(5),
+		AccountNum:             &num,
+		Reserved:               false,
+	}
+	repo.On("ListReservationsByTx", ctx, int64(31)).Return([]domain.InterbankReservation{resv}, nil)
+
+	dbMock.ExpectBegin()
+	dbMock.ExpectExec("UPDATE core_banking.racun").WillReturnResult(sqlmock.NewResult(1, 1))
+	dbMock.ExpectQuery("SELECT id FROM core_banking.racun WHERE broj_racuna").
+		WillReturnRows(dbMock.NewRows([]string{"id"}).AddRow(int64(43)))
+	dbMock.ExpectExec("INSERT INTO core_banking.transakcija").WillReturnResult(sqlmock.NewResult(1, 1))
+	repo.On("UpdateTransactionStatus", ctx, int64(31), domain.TxStatusCommitted, "COMMITTED", "").Return(nil)
+	dbMock.ExpectCommit()
+
+	require.NoError(t, e.Commit(ctx, 31))
+	require.NoError(t, dbMock.ExpectationsWereMet())
+}
+
+// ─── Escrow: BlockShares / ReleaseShares ──────────────────────────────────────
+
+func TestBlockShares_FIFO(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 111, "265")
+	ctx := context.Background()
+
+	dbMock.ExpectBegin()
+	dbMock.ExpectQuery("SELECT ps.id, ps.quantity").WillReturnRows(
+		dbMock.NewRows([]string{"id", "quantity"}).AddRow(int64(1), int32(4)).AddRow(int64(2), int32(10)))
+	// uzmi 4 iz reda 1 → 0 → DELETE; uzmi 1 iz reda 2 → 9 → UPDATE
+	dbMock.ExpectExec("DELETE FROM core_banking.public_shares").WillReturnResult(sqlmock.NewResult(0, 1))
+	dbMock.ExpectExec("UPDATE core_banking.public_shares SET quantity").WillReturnResult(sqlmock.NewResult(0, 1))
+	dbMock.ExpectCommit()
+
+	require.NoError(t, e.BlockShares(ctx, 1, "AAPL", 5))
+	require.NoError(t, dbMock.ExpectationsWereMet())
+}
+
+func TestBlockShares_Insufficient(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 111, "265")
+	ctx := context.Background()
+
+	dbMock.ExpectBegin()
+	dbMock.ExpectQuery("SELECT ps.id, ps.quantity").WillReturnRows(
+		dbMock.NewRows([]string{"id", "quantity"}).AddRow(int64(1), int32(3)))
+	dbMock.ExpectExec("DELETE FROM core_banking.public_shares").WillReturnResult(sqlmock.NewResult(0, 1))
+	dbMock.ExpectRollback()
+
+	err := e.BlockShares(ctx, 1, "AAPL", 5)
+	require.Error(t, err)
+}
+
+func TestRollback_PersonMonasNegative(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	repo := &mockInterbankRepoForExecutor{}
+	e := NewLocalTransactionExecutor(db, repo, 111, "265")
+	ctx := context.Background()
+
+	num := "265001000009"
+	resv := domain.InterbankReservation{
+		InterbankTransactionID: 40,
+		AccountKind:            domain.AccountKindPerson,
+		AssetType:              domain.AssetTypeMonas,
+		Amount:                 decimal.NewFromInt(-5),
+		AccountNum:             &num,
+		Reserved:               true,
+	}
+	repo.On("ListReservationsByTx", ctx, int64(40)).Return([]domain.InterbankReservation{resv}, nil)
+
+	dbMock.ExpectBegin()
+	dbMock.ExpectExec("UPDATE core_banking.racun").WillReturnResult(sqlmock.NewResult(1, 1))
+	repo.On("UpdateTransactionStatus", ctx, int64(40), domain.TxStatusRolledBack, "ROLLED_BACK", "").Return(nil)
+	dbMock.ExpectCommit()
+
+	require.NoError(t, e.Rollback(ctx, 40))
+	require.NoError(t, dbMock.ExpectationsWereMet())
+}
+
+func TestReleaseShares_Inserts(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 111, "265")
+	ctx := context.Background()
+
+	dbMock.ExpectQuery("SELECT id FROM core_banking.listing WHERE ticker").
+		WillReturnRows(dbMock.NewRows([]string{"id"}).AddRow(int64(7)))
+	dbMock.ExpectExec("INSERT INTO core_banking.public_shares").WillReturnResult(sqlmock.NewResult(1, 1))
+
+	require.NoError(t, e.ReleaseShares(ctx, 1, "AAPL", 5))
 	require.NoError(t, dbMock.ExpectationsWereMet())
 }

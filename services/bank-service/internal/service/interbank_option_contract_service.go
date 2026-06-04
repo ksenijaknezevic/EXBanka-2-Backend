@@ -27,17 +27,25 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// acceptCoordinator — zavisnosti za accept/exercise: 2PC poravnanje i escrow akcija.
+// Zadovoljava ga *TransactionCoordinator; izdvojeno kao interfejs radi testiranja.
+type acceptCoordinator interface {
+	InitiateInterbankTransaction(ctx context.Context, tx domain.Transaction, initiatorUserID *int64) (*domain.InterbankTransaction, error)
+	BlockShares(ctx context.Context, userID int64, ticker string, amount int32) error
+	ReleaseShares(ctx context.Context, userID int64, ticker string, amount int32) error
+}
+
 // InterbankOptionContractService — kreiranje i izvršavanje opcionih ugovora.
 type InterbankOptionContractService struct {
 	repo             domain.InterbankRepository
-	coordinator      *TransactionCoordinator
+	coordinator      acceptCoordinator
 	ourRoutingNumber int64
 }
 
 // NewInterbankOptionContractService konstruktor.
 func NewInterbankOptionContractService(
 	repo domain.InterbankRepository,
-	coordinator *TransactionCoordinator,
+	coordinator acceptCoordinator,
 	ourRoutingNumber int64,
 ) *InterbankOptionContractService {
 	return &InterbankOptionContractService{
@@ -49,11 +57,16 @@ func NewInterbankOptionContractService(
 
 // AcceptNegotiation — GET /negotiations/{routing}/{id}/accept.
 //
-// Pravilo: prihvata onaj kome je trenutno red — strana koja NIJE poslednja
-// menjala. Pošto ne znamo identitet caller-a (zahtev je bez payload-a), banka
-// prodavca smatra prihvatanje validnim ako je negotiation OPEN i isOngoing.
+// Izvršava je banka prodavca (ona hostuje pregovaranje). U tom trenutku, atomično
+// koliko je moguće:
+//  1. blokira prodavčeve akcije (escrow) — da ih ne može dvostruko prodati,
+//  2. sinhrono naplaćuje premiju kupac → prodavac preko 2PC (si-tx-proto),
+//  3. tek ako je premija naplaćena, kreira opcioni ugovor (ACTIVE) i zatvara
+//     pregovaranje.
 //
-// Po protokolu, ovo je idempotentna akcija; ako je već prihvaćena, vraćamo OK.
+// Redosled (blokada pre premije) garantuje da premiju nikad ne naplatimo ako
+// prodavac nema akcije; ako premija padne, blokada se kompenzuje (vraćanje akcija).
+// Idempotentno: već prihvaćeno pregovaranje vraća OK bez efekata.
 func (s *InterbankOptionContractService) AcceptNegotiation(ctx context.Context, routing int64, id string) error {
 	n, err := s.repo.GetNegotiationByID(ctx, routing, id)
 	if err != nil {
@@ -62,15 +75,75 @@ func (s *InterbankOptionContractService) AcceptNegotiation(ctx context.Context, 
 	if n == nil {
 		return domain.ErrInterbankNotFound
 	}
-	if !n.IsOngoing && n.Status != "ACCEPTED" {
-		return domain.ErrInterbankConflict
-	}
 	if n.Status == "ACCEPTED" {
 		return nil
 	}
+	if !n.IsOngoing {
+		return domain.ErrInterbankConflict
+	}
 
-	// 1) Kreiraj opcioni ugovor (status ACTIVE).
-	contract := &domain.InterbankOptionContract{
+	// Buyer-side: ako prodavac nije na našoj banci, strani prodavac je autoritativan i
+	// poravnava premiju + blokira svoje akcije; premija nama stiže preko dolaznog 2PC.
+	// Mi samo upišemo lokalni ugovor da bi naš kupac kasnije mogao da ga iskoristi.
+	if n.SellerRoutingNumber != s.ourRoutingNumber {
+		return s.finalizeAccept(ctx, n)
+	}
+
+	sellerUserID, err := strconv.ParseInt(n.SellerID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("nevalidan sellerId %q: %w", n.SellerID, err)
+	}
+
+	// 1) Blokiraj prodavčeve akcije (escrow). Nedovoljno akcija → odbij pre premije.
+	if err := s.coordinator.BlockShares(ctx, sellerUserID, n.StockTicker, n.Amount); err != nil {
+		return fmt.Errorf("blokada akcija prodavca: %w", err)
+	}
+
+	// 2) Naplati premiju sinhrono preko 2PC (kupac PERSON −premium / prodavac PERSON +premium).
+	ibTx, err := s.coordinator.InitiateInterbankTransaction(ctx, s.buildPremiumTransaction(n), &sellerUserID)
+	committed := err == nil && ibTx != nil && ibTx.Status == domain.TxStatusCommitted
+	if !committed {
+		// Premija nije naplaćena → kompenzuj blokadu, pregovaranje ostaje otvoreno.
+		if relErr := s.coordinator.ReleaseShares(ctx, sellerUserID, n.StockTicker, n.Amount); relErr != nil {
+			return fmt.Errorf("naplata premije nije uspela; kompenzacija blokade takođe (RECONCILE): premija=%v release=%w", err, relErr)
+		}
+		if err != nil {
+			return fmt.Errorf("naplata premije: %w", err)
+		}
+		return fmt.Errorf("naplata premije nije izvršena (premija nije naplaćena)")
+	}
+
+	// 3) Premija prošla + akcije blokirane → kreiraj ugovor (ACTIVE) i zatvori pregovaranje.
+	if err := s.repo.CreateOptionContract(ctx, contractFromNegotiation(n)); err != nil {
+		// Kritično: premija naplaćena + akcije blokirane, ali ugovor nije upisan.
+		return fmt.Errorf("premija naplaćena ali kreiranje ugovora nije uspelo (potrebna reconciliacija): %w", err)
+	}
+	n.IsOngoing = false
+	n.Status = "ACCEPTED"
+	if err := s.repo.UpdateNegotiation(ctx, n); err != nil {
+		return fmt.Errorf("zatvaranje pregovaranja: %w", err)
+	}
+	return nil
+}
+
+// finalizeAccept — buyer-side: upiše lokalni ugovor (ACTIVE) i zatvori pregovaranje.
+// Bez blokade akcija i premije lokalno — to obavlja strani (autoritativni) prodavac.
+// Idempotentno preko provere statusa u AcceptNegotiation.
+func (s *InterbankOptionContractService) finalizeAccept(ctx context.Context, n *domain.InterbankNegotiation) error {
+	if err := s.repo.CreateOptionContract(ctx, contractFromNegotiation(n)); err != nil {
+		return fmt.Errorf("kreiranje lokalnog opcionog ugovora: %w", err)
+	}
+	n.IsOngoing = false
+	n.Status = "ACCEPTED"
+	if err := s.repo.UpdateNegotiation(ctx, n); err != nil {
+		return fmt.Errorf("zatvaranje pregovaranja: %w", err)
+	}
+	return nil
+}
+
+// contractFromNegotiation — ugovor (ACTIVE) iz prihvaćenog pregovaranja.
+func contractFromNegotiation(n *domain.InterbankNegotiation) *domain.InterbankOptionContract {
+	return &domain.InterbankOptionContract{
 		NegotiationRoutingNumber: n.NegotiationRoutingNumber,
 		NegotiationForeignID:     n.NegotiationForeignID,
 		StockTicker:              n.StockTicker,
@@ -86,63 +159,23 @@ func (s *InterbankOptionContractService) AcceptNegotiation(ctx context.Context, 
 		SellerID:                 n.SellerID,
 		Status:                   "ACTIVE",
 	}
-	if err := s.repo.CreateOptionContract(ctx, contract); err != nil {
-		return fmt.Errorf("kreiranje opcionog ugovora: %w", err)
+}
+
+// buildPremiumTransaction — balansirana premium transakcija: kupac plaća, prodavac prima.
+func (s *InterbankOptionContractService) buildPremiumTransaction(n *domain.InterbankNegotiation) domain.Transaction {
+	buyer := &domain.ForeignBankId{RoutingNumber: n.BuyerRoutingNumber, ID: n.BuyerID}
+	seller := &domain.ForeignBankId{RoutingNumber: n.SellerRoutingNumber, ID: n.SellerID}
+	asset := domain.Asset{Type: domain.AssetTypeMonas, MonAs: &domain.MonetaryAsset{Currency: n.PremiumCurrency}}
+	return domain.Transaction{
+		Postings: []domain.Posting{
+			{Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: buyer}, Amount: n.PremiumAmount.Neg(), Asset: asset},
+			{Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: seller}, Amount: n.PremiumAmount, Asset: asset},
+		},
+		TransactionID:  domain.ForeignBankId{RoutingNumber: s.ourRoutingNumber, ID: NewLocalKey()},
+		Message:        "OTC premium " + n.NegotiationForeignID,
+		PaymentCode:    "289",
+		PaymentPurpose: "OTC_PREMIUM",
 	}
-
-	// 2) Zatvori pregovaranje.
-	n.IsOngoing = false
-	n.Status = "ACCEPTED"
-	if err := s.repo.UpdateNegotiation(ctx, n); err != nil {
-		return err
-	}
-
-	// 3) Premija: po protokolu, premium se kreće preko transaction protocol-a.
-	//    Banka koja je primila accept (mi, banka prodavca) inicira NEW_TX:
-	//      seller credit premium
-	//      buyer debit premium
-	//    Ako su obe banke iste, ne šaljemo poruku — interno bi to obavila
-	//    InterbankPaymentService. Ovo ostavljamo coordinator-u.
-
-	if n.BuyerRoutingNumber != s.ourRoutingNumber {
-		// Inter-bank: pokreni 2-phase commit za premiju.
-		txID := domain.ForeignBankId{
-			RoutingNumber: s.ourRoutingNumber,
-			ID:            NewLocalKey(),
-		}
-		// Posting konstrukcija — premium tok.
-		buyerPerson := &domain.ForeignBankId{RoutingNumber: n.BuyerRoutingNumber, ID: n.BuyerID}
-		sellerPerson := &domain.ForeignBankId{RoutingNumber: n.SellerRoutingNumber, ID: n.SellerID}
-		premium := domain.MonetaryAsset{Currency: n.PremiumCurrency}
-		postings := []domain.Posting{
-			{
-				Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: buyerPerson},
-				Amount:  n.PremiumAmount.Neg(),
-				Asset:   domain.Asset{Type: domain.AssetTypeMonas, MonAs: &premium},
-			},
-			{
-				Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: sellerPerson},
-				Amount:  n.PremiumAmount,
-				Asset:   domain.Asset{Type: domain.AssetTypeMonas, MonAs: &premium},
-			},
-		}
-		txn := domain.Transaction{
-			Postings:       postings,
-			TransactionID:  txID,
-			Message:        "OTC premium",
-			PaymentCode:    "289",
-			PaymentPurpose: "OTC_PREMIUM",
-		}
-		// Lokalna banka koordinira; coordinator će proći prepare/commit/rollback ciklus.
-		// (Ako lokalna priprema ne uspe, accept i dalje ostaje — premium se može retry-ovati ručno.)
-		_ = txn
-		// Napomena: integraciono iskreirana premium-tx će biti obrađena preko
-		// TransactionCoordinator.InitiateInterbankPayment-stila API-ja kada
-		// klijent UI klikne "Prihvati"; ovde ne pokrećemo automatski jer ne
-		// znamo sender račun. Frontend zove POST /bank/interbank/otc/{id}/accept.
-	}
-
-	return nil
 }
 
 // ListContracts — vraća sve aktivne (i istorijske) ugovore za korisnika.

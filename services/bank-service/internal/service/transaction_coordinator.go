@@ -83,6 +83,16 @@ func (c *TransactionCoordinator) PeerRoutingNumber() int64 {
 	return c.peerRoutingNumber
 }
 
+// BlockShares — escrow: zaključaj korisnikove akcije (delegira lokalnom executoru).
+func (c *TransactionCoordinator) BlockShares(ctx context.Context, userID int64, ticker string, amount int32) error {
+	return c.executor.BlockShares(ctx, userID, ticker, amount)
+}
+
+// ReleaseShares — escrow: vrati korisnikove akcije (delegira lokalnom executoru).
+func (c *TransactionCoordinator) ReleaseShares(ctx context.Context, userID int64, ticker string, amount int32) error {
+	return c.executor.ReleaseShares(ctx, userID, ticker, amount)
+}
+
 // ─── InitiateInterbankPayment ────────────────────────────────────────────────
 
 // InitiateInterbankPayment formira Transaction i izvršava 2-phase commit.

@@ -255,6 +255,15 @@ func (h *InterbankPaymentHandler) handleCreateNegotiation(w http.ResponseWriter,
 			writeIBError(w, http.StatusBadGateway, err.Error())
 			return
 		}
+		// Persistuj buyer-side mirror pod AUTORITATIVNIM {sellerRouting, sellerId}
+		// koji nam je prodavčeva banka vratila — da bi naš inbound handler razrešio
+		// njene counter/get/cancel/accept pozive (umesto 404).
+		if id != nil {
+			if err := h.otcSvc.RecordRemoteNegotiation(r.Context(), *id, offer); err != nil {
+				writeIBError(w, http.StatusInternalServerError, "pregovor kreiran kod prodavca ali lokalno čuvanje nije uspelo: "+err.Error())
+				return
+			}
+		}
 		writeIBJSON(w, http.StatusOK, id)
 		return
 	}
@@ -407,6 +416,12 @@ func (h *InterbankPaymentHandler) handleCounterNegotiation(w http.ResponseWriter
 		h.writeNegotiationErr(w, err)
 		return
 	}
+	// Ažuriraj buyer-side mirror (lastModifiedBy = mi) → ispravna turn-logika za
+	// sledeću kontraponudu prodavčeve banke.
+	if err := h.otcSvc.RecordRemoteNegotiation(r.Context(), domain.ForeignBankId{RoutingNumber: routing, ID: id}, offer); err != nil {
+		writeIBError(w, http.StatusInternalServerError, "kontraponuda poslata ali lokalno ažuriranje nije uspelo: "+err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -423,6 +438,11 @@ func (h *InterbankPaymentHandler) handleCancelNegotiation(w http.ResponseWriter,
 		h.writeNegotiationErr(w, err)
 		return
 	}
+	// Best-effort: zatvori i buyer-side mirror.
+	if err := h.otcSvc.CancelNegotiation(r.Context(), routing, id); err != nil && !errors.Is(err, domain.ErrInterbankNotFound) {
+		writeIBError(w, http.StatusInternalServerError, "otkazano kod prodavca ali lokalno ažuriranje nije uspelo: "+err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -437,6 +457,12 @@ func (h *InterbankPaymentHandler) handleAcceptNegotiation(w http.ResponseWriter,
 	}
 	if err := h.client.AcceptNegotiation(r.Context(), domain.ForeignBankId{RoutingNumber: routing, ID: id}); err != nil {
 		h.writeNegotiationErr(w, err)
+		return
+	}
+	// Strani prodavac je finalizovao (premija stiže preko dolaznog 2PC) → upiši
+	// lokalni ugovor na našoj (kupčevoj) strani da kupac može kasnije da ga iskoristi.
+	if err := h.optionSvc.AcceptNegotiation(r.Context(), routing, id); err != nil {
+		writeIBError(w, http.StatusInternalServerError, "prihvaćeno kod prodavca ali lokalni ugovor nije upisan: "+err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

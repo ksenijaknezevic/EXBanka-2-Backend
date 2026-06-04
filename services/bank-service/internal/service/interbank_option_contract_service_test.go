@@ -21,6 +21,26 @@ func newOptionContractService(repo domain.InterbankRepository) *service.Interban
 	return service.NewInterbankOptionContractService(repo, nil, ourRouting)
 }
 
+// mockAcceptCoordinator — mock za 2PC poravnanje + escrow akcija.
+type mockAcceptCoordinator struct{ mock.Mock }
+
+func (m *mockAcceptCoordinator) InitiateInterbankTransaction(ctx context.Context, tx domain.Transaction, initiatorUserID *int64) (*domain.InterbankTransaction, error) {
+	args := m.Called(ctx, tx, initiatorUserID)
+	var r *domain.InterbankTransaction
+	if v := args.Get(0); v != nil {
+		r = v.(*domain.InterbankTransaction)
+	}
+	return r, args.Error(1)
+}
+
+func (m *mockAcceptCoordinator) BlockShares(ctx context.Context, userID int64, ticker string, amount int32) error {
+	return m.Called(ctx, userID, ticker, amount).Error(0)
+}
+
+func (m *mockAcceptCoordinator) ReleaseShares(ctx context.Context, userID int64, ticker string, amount int32) error {
+	return m.Called(ctx, userID, ticker, amount).Error(0)
+}
+
 func activeNegotiation() *domain.InterbankNegotiation {
 	return &domain.InterbankNegotiation{
 		NegotiationRoutingNumber:  ourRouting,
@@ -95,50 +115,128 @@ func TestAcceptNegotiation_AlreadyAccepted_OK(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestAcceptNegotiation_IntraBankOK(t *testing.T) {
+func TestAcceptNegotiation_CrossBank_HappyPath(t *testing.T) {
 	repo := &mockInterbankRepo{}
+	coord := &mockAcceptCoordinator{}
 	ctx := context.Background()
-	// Use a service where buyer is on the same bank as ours — no inter-bank premium needed
-	svc := service.NewInterbankOptionContractService(repo, nil, ourRouting)
+	svc := service.NewInterbankOptionContractService(repo, coord, ourRouting)
 
-	n := activeNegotiation()
-	n.BuyerRoutingNumber = ourRouting // intra-bank
+	n := activeNegotiation() // buyer na banci 222
+	n.SellerID = "1"         // naš prodavac (numerički user id)
+	n.BuyerID = "2"
 
 	repo.On("GetNegotiationByID", ctx, ourRouting, "neg1").Return(n, nil)
-	repo.On("CreateOptionContract", ctx, mock.AnythingOfType("*domain.InterbankOptionContract")).Return(nil)
+	// 1) blokada akcija prodavca
+	coord.On("BlockShares", ctx, int64(1), "AAPL", int32(10)).Return(nil)
+	// 2) premium 2PC → COMMITTED
+	coord.On("InitiateInterbankTransaction", ctx, mock.Anything, mock.Anything).
+		Return(&domain.InterbankTransaction{Status: domain.TxStatusCommitted}, nil)
+	// 3) ugovor ACTIVE + zatvaranje pregovaranja
+	repo.On("CreateOptionContract", ctx, mock.MatchedBy(func(c *domain.InterbankOptionContract) bool {
+		return c.Status == "ACTIVE" && c.StockTicker == "AAPL" && c.Amount == 10
+	})).Return(nil)
 	repo.On("UpdateNegotiation", ctx, mock.MatchedBy(func(nn *domain.InterbankNegotiation) bool {
 		return !nn.IsOngoing && nn.Status == "ACCEPTED"
 	})).Return(nil)
 
 	err := svc.AcceptNegotiation(ctx, ourRouting, "neg1")
 	require.NoError(t, err)
+	coord.AssertExpectations(t)
+	repo.AssertExpectations(t)
 }
 
-func TestAcceptNegotiation_InterBankOK(t *testing.T) {
+func TestAcceptNegotiation_PremiumFails_ReleasesShares(t *testing.T) {
 	repo := &mockInterbankRepo{}
+	coord := &mockAcceptCoordinator{}
 	ctx := context.Background()
-	svc := newOptionContractService(repo)
+	svc := service.NewInterbankOptionContractService(repo, coord, ourRouting)
 
-	n := activeNegotiation() // buyer is 222, we are ourRouting → inter-bank
+	n := activeNegotiation()
+	n.SellerID = "1"
 	repo.On("GetNegotiationByID", ctx, ourRouting, "neg1").Return(n, nil)
-	repo.On("CreateOptionContract", ctx, mock.Anything).Return(nil)
-	repo.On("UpdateNegotiation", ctx, mock.Anything).Return(nil)
+	coord.On("BlockShares", ctx, int64(1), "AAPL", int32(10)).Return(nil)
+	// premium nije naplaćen (ROLLED_BACK)
+	coord.On("InitiateInterbankTransaction", ctx, mock.Anything, mock.Anything).
+		Return(&domain.InterbankTransaction{Status: domain.TxStatusRolledBack}, nil)
+	// kompenzacija: akcije se vraćaju
+	coord.On("ReleaseShares", ctx, int64(1), "AAPL", int32(10)).Return(nil)
 
 	err := svc.AcceptNegotiation(ctx, ourRouting, "neg1")
-	require.NoError(t, err)
+	require.Error(t, err)
+	// ugovor NIJE kreiran, pregovaranje NIJE zatvoreno
+	repo.AssertNotCalled(t, "CreateOptionContract", mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "UpdateNegotiation", mock.Anything, mock.Anything)
+	coord.AssertExpectations(t)
+}
+
+func TestAcceptNegotiation_InsufficientShares_NoPremium(t *testing.T) {
+	repo := &mockInterbankRepo{}
+	coord := &mockAcceptCoordinator{}
+	ctx := context.Background()
+	svc := service.NewInterbankOptionContractService(repo, coord, ourRouting)
+
+	n := activeNegotiation()
+	n.SellerID = "1"
+	repo.On("GetNegotiationByID", ctx, ourRouting, "neg1").Return(n, nil)
+	// blokada padne → premija se ne ni pokušava
+	coord.On("BlockShares", ctx, int64(1), "AAPL", int32(10)).Return(errors.New("nedovoljno akcija"))
+
+	err := svc.AcceptNegotiation(ctx, ourRouting, "neg1")
+	require.Error(t, err)
+	coord.AssertNotCalled(t, "InitiateInterbankTransaction", mock.Anything, mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "CreateOptionContract", mock.Anything, mock.Anything)
+	coord.AssertExpectations(t)
 }
 
 func TestAcceptNegotiation_CreateContractError(t *testing.T) {
 	repo := &mockInterbankRepo{}
+	coord := &mockAcceptCoordinator{}
 	ctx := context.Background()
-	svc := newOptionContractService(repo)
+	svc := service.NewInterbankOptionContractService(repo, coord, ourRouting)
 
 	n := activeNegotiation()
+	n.SellerID = "1"
 	repo.On("GetNegotiationByID", ctx, ourRouting, "neg1").Return(n, nil)
+	coord.On("BlockShares", ctx, int64(1), "AAPL", int32(10)).Return(nil)
+	coord.On("InitiateInterbankTransaction", ctx, mock.Anything, mock.Anything).
+		Return(&domain.InterbankTransaction{Status: domain.TxStatusCommitted}, nil)
+	// premija prošla, ali upis ugovora pukne → kritična greška (reconciliacija)
 	repo.On("CreateOptionContract", ctx, mock.Anything).Return(errors.New("db"))
 
 	err := svc.AcceptNegotiation(ctx, ourRouting, "neg1")
 	require.Error(t, err)
+	coord.AssertExpectations(t)
+}
+
+// Buyer-side accept: strani prodavac (222) hostuje i već je poravnao premiju (preko 2PC).
+// Naša strana samo kreira lokalni ugovor (ACTIVE) — bez blokade akcija i bez premium 2PC lokalno.
+func TestAcceptNegotiation_BuyerSide_CreatesLocalContract(t *testing.T) {
+	repo := &mockInterbankRepo{}
+	coord := &mockAcceptCoordinator{}
+	ctx := context.Background()
+	svc := service.NewInterbankOptionContractService(repo, coord, ourRouting)
+
+	n := activeNegotiation()
+	n.NegotiationRoutingNumber = 222
+	n.NegotiationForeignID = "rneg1"
+	n.SellerRoutingNumber = 222
+	n.SellerID = "S-9"
+	n.BuyerRoutingNumber = ourRouting
+	n.BuyerID = "1"
+
+	repo.On("GetNegotiationByID", ctx, int64(222), "rneg1").Return(n, nil)
+	repo.On("CreateOptionContract", ctx, mock.MatchedBy(func(c *domain.InterbankOptionContract) bool {
+		return c.Status == "ACTIVE" && c.NegotiationRoutingNumber == 222 && c.BuyerRoutingNumber == ourRouting && c.SellerRoutingNumber == 222
+	})).Return(nil)
+	repo.On("UpdateNegotiation", ctx, mock.MatchedBy(func(nn *domain.InterbankNegotiation) bool {
+		return !nn.IsOngoing && nn.Status == "ACCEPTED"
+	})).Return(nil)
+
+	err := svc.AcceptNegotiation(ctx, 222, "rneg1")
+	require.NoError(t, err)
+	coord.AssertNotCalled(t, "BlockShares", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	coord.AssertNotCalled(t, "InitiateInterbankTransaction", mock.Anything, mock.Anything, mock.Anything)
+	repo.AssertExpectations(t)
 }
 
 // ─── ListContracts ────────────────────────────────────────────────────────────

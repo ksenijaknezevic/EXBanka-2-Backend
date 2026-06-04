@@ -164,5 +164,55 @@ func (s *InterbankOTCService) CancelNegotiation(ctx context.Context, routing int
 	return s.repo.UpdateNegotiation(ctx, n)
 }
 
+// RecordRemoteNegotiation — buyer-side mirror: kad naš korisnik (kupac) pregovara
+// sa stranim prodavcem, čuvamo lokalnu kopiju pregovora pod AUTORITATIVNIM ključem
+// koji nam je prodavčeva banka vratila ({sellerRouting, sellerId}), da bi naš
+// inbound handler razrešio njihove counter/get/cancel/accept pozive (umesto 404).
+// Upsert: insert pri kreiranju, update pri našoj kontraponudi.
+func (s *InterbankOTCService) RecordRemoteNegotiation(ctx context.Context, negID domain.ForeignBankId, offer domain.OtcOffer) error {
+	settlement, err := time.Parse(time.RFC3339, offer.SettlementDate)
+	if err != nil {
+		return fmt.Errorf("nevalidan settlementDate: %w", err)
+	}
+	existing, err := s.repo.GetNegotiationByID(ctx, negID.RoutingNumber, negID.ID)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		existing.StockTicker = offer.Stock.Ticker
+		existing.SettlementDate = settlement
+		existing.PriceCurrency = offer.PricePerUnit.Currency
+		existing.PriceAmount = offer.PricePerUnit.Amount
+		existing.PremiumCurrency = offer.Premium.Currency
+		existing.PremiumAmount = offer.Premium.Amount
+		existing.Amount = offer.Amount
+		existing.LastModifiedRoutingNumber = offer.LastModifiedBy.RoutingNumber
+		existing.LastModifiedID = offer.LastModifiedBy.ID
+		existing.IsOngoing = true
+		existing.Status = "OPEN"
+		return s.repo.UpdateNegotiation(ctx, existing)
+	}
+	n := &domain.InterbankNegotiation{
+		NegotiationRoutingNumber:  negID.RoutingNumber,
+		NegotiationForeignID:      negID.ID,
+		StockTicker:               offer.Stock.Ticker,
+		SettlementDate:            settlement,
+		PriceCurrency:             offer.PricePerUnit.Currency,
+		PriceAmount:               offer.PricePerUnit.Amount,
+		PremiumCurrency:           offer.Premium.Currency,
+		PremiumAmount:             offer.Premium.Amount,
+		Amount:                    offer.Amount,
+		BuyerRoutingNumber:        offer.BuyerID.RoutingNumber,
+		BuyerID:                   offer.BuyerID.ID,
+		SellerRoutingNumber:       offer.SellerID.RoutingNumber,
+		SellerID:                  offer.SellerID.ID,
+		LastModifiedRoutingNumber: offer.LastModifiedBy.RoutingNumber,
+		LastModifiedID:            offer.LastModifiedBy.ID,
+		IsOngoing:                 true,
+		Status:                    "OPEN",
+	}
+	return s.repo.CreateNegotiation(ctx, n)
+}
+
 // suppress strconv unused
 var _ = strconv.Itoa

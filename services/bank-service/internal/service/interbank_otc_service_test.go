@@ -432,3 +432,59 @@ func TestInterbankOTC_ListNegotiations_EmployeeNoSellerFilter(t *testing.T) {
 	require.Len(t, got, 0)
 	repo.AssertExpectations(t)
 }
+
+// ─── RecordRemoteNegotiation (buyer-side mirror za pregovore koje hostuje druga banka) ──
+
+// remoteSellerOffer — naš korisnik (kupac) kupuje od stranog prodavca (222).
+func remoteSellerOffer() domain.OtcOffer {
+	return domain.OtcOffer{
+		Stock:          domain.StockDescription{Ticker: "AAPL"},
+		SettlementDate: time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339),
+		PricePerUnit:   domain.MonetaryValue{Currency: "USD", Amount: decimal.NewFromFloat(150)},
+		Premium:        domain.MonetaryValue{Currency: "USD", Amount: decimal.NewFromFloat(5)},
+		BuyerID:        domain.ForeignBankId{RoutingNumber: ourRouting, ID: "1"},
+		SellerID:       domain.ForeignBankId{RoutingNumber: 222, ID: "S-9"},
+		Amount:         10,
+		LastModifiedBy: domain.ForeignBankId{RoutingNumber: ourRouting, ID: "1"},
+	}
+}
+
+func TestRecordRemoteNegotiation_Insert(t *testing.T) {
+	repo := &mockInterbankRepo{}
+	ctx := context.Background()
+	svc := service.NewInterbankOTCService(repo, ourRouting)
+
+	negID := domain.ForeignBankId{RoutingNumber: 222, ID: "neg-remote"}
+	repo.On("GetNegotiationByID", ctx, int64(222), "neg-remote").Return(nil, nil)
+	repo.On("CreateNegotiation", ctx, mock.MatchedBy(func(n *domain.InterbankNegotiation) bool {
+		return n.NegotiationRoutingNumber == 222 && n.NegotiationForeignID == "neg-remote" &&
+			n.BuyerRoutingNumber == ourRouting && n.SellerRoutingNumber == 222 &&
+			n.IsOngoing && n.Status == "OPEN"
+	})).Return(nil)
+
+	err := svc.RecordRemoteNegotiation(ctx, negID, remoteSellerOffer())
+	require.NoError(t, err)
+	repo.AssertExpectations(t)
+}
+
+func TestRecordRemoteNegotiation_Update(t *testing.T) {
+	repo := &mockInterbankRepo{}
+	ctx := context.Background()
+	svc := service.NewInterbankOTCService(repo, ourRouting)
+
+	negID := domain.ForeignBankId{RoutingNumber: 222, ID: "neg-remote"}
+	existing := &domain.InterbankNegotiation{
+		ID: 7, NegotiationRoutingNumber: 222, NegotiationForeignID: "neg-remote",
+		SellerRoutingNumber: 222, SellerID: "S-9", BuyerRoutingNumber: ourRouting, BuyerID: "1",
+		LastModifiedRoutingNumber: 222, LastModifiedID: "S-9", IsOngoing: true, Status: "OPEN",
+	}
+	repo.On("GetNegotiationByID", ctx, int64(222), "neg-remote").Return(existing, nil)
+	repo.On("UpdateNegotiation", ctx, mock.MatchedBy(func(n *domain.InterbankNegotiation) bool {
+		// posle naše kontraponude lastModified = mi (ourRouting)
+		return n.ID == 7 && n.LastModifiedRoutingNumber == ourRouting && n.Status == "OPEN" && n.IsOngoing
+	})).Return(nil)
+
+	err := svc.RecordRemoteNegotiation(ctx, negID, remoteSellerOffer())
+	require.NoError(t, err)
+	repo.AssertExpectations(t)
+}
