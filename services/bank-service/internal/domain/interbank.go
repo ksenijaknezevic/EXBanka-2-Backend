@@ -245,7 +245,9 @@ type TransactionVote struct {
 // PublicStockSeller — jedan prodavac (i njegova količina) za dati stock.
 type PublicStockSeller struct {
 	Seller ForeignBankId `json:"seller"`
-	Amount int32         `json:"amount"`
+	// Amount je float64 jer peer banke šalju decimalne količine (npr. 9.0000
+	// posle delimične prodaje); int32 bi obarao parsiranje cele liste.
+	Amount float64 `json:"amount"`
 }
 
 // PublicStock — agregirani entitet za GET /public-stock.

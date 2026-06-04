@@ -582,7 +582,7 @@ func (r *interbankRepository) ListPublicStocks(ctx context.Context) ([]domain.Pu
 				RoutingNumber: 0, // popunjava service layer iz cfg.InterbankRoutingNumber
 				ID:            int64ToString(rr.UserID),
 			},
-			Amount: rr.Qty,
+			Amount: float64(rr.Qty),
 		})
 	}
 	out := make([]domain.PublicStock, 0, len(order))
