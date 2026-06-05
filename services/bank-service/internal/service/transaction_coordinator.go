@@ -295,6 +295,7 @@ func (c *TransactionCoordinator) InitiateInterbankTransaction(ctx context.Contex
 			_ = c.repo.UpdateTransactionStatus(ctx, ibTx.ID, domain.TxStatusFailed, "LOCAL_COMMIT", err.Error())
 			return ibTx, err
 		}
+		ibTx.Status = domain.TxStatusCommitted // sinhronizuj in-memory status sa DB-jem
 		return ibTx, nil
 	}
 
@@ -341,6 +342,7 @@ func (c *TransactionCoordinator) InitiateInterbankTransaction(ctx context.Contex
 		_ = c.msgSvc.SendMessage(ctx, cm)
 	}
 	_ = c.repo.UpdateTransactionStatus(ctx, ibTx.ID, domain.TxStatusCommitted, "COMMITTED", "")
+	ibTx.Status = domain.TxStatusCommitted // sinhronizuj in-memory status sa DB-jem
 	return ibTx, nil
 }
 

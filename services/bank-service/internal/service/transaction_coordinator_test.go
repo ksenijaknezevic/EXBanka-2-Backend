@@ -550,6 +550,8 @@ func TestInitiateInterbankTx_AllLocal_CommitSuccess(t *testing.T) {
 	ibTx, err := coord.InitiateInterbankTransaction(ctx, emptyTx, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, ibTx)
+	// In-memory status mora odražavati commit (AcceptNegotiation se oslanja na ovo).
+	assert.Equal(t, domain.TxStatusCommitted, ibTx.Status)
 	require.NoError(t, dbMock.ExpectationsWereMet())
 }
 
@@ -675,6 +677,8 @@ func TestInitiateInterbankTx_HasRemote_FullSuccess(t *testing.T) {
 	ibTx, err := coord.InitiateInterbankTransaction(ctx, tx, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, ibTx)
+	// In-memory status mora biti COMMITTED posle uspešnog 2PC (AcceptNegotiation to proverava).
+	assert.Equal(t, domain.TxStatusCommitted, ibTx.Status)
 }
 
 // ─── InitiateInterbankPayment ─────────────────────────────────────────────────
