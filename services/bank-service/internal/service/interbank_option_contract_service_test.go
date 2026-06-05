@@ -399,3 +399,36 @@ func TestExerciseContract_SettlementDatePassed(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "settlementDate")
 }
+
+// Exercise smer: call opcija → kupac PLAĆA novac (−) i PRIMA akcije (+);
+// na uspešan 2PC ugovor postaje EXERCISED.
+func TestExerciseContract_BuyerPaysCashReceivesStock_AndMarksExercised(t *testing.T) {
+	repo := &mockInterbankRepo{}
+	coord := &mockAcceptCoordinator{}
+	ctx := context.Background()
+	svc := service.NewInterbankOptionContractService(repo, coord, ourRouting)
+
+	c := activeContract() // BuyerRoutingNumber=ourRouting, BuyerID="42", AAPL, Amount=10, Price=100 USD
+	repo.On("GetOptionContract", ctx, ourRouting, "c1").Return(c, nil)
+	coord.On("InitiateInterbankTransaction", ctx, mock.MatchedBy(func(tx domain.Transaction) bool {
+		var buyerCash, buyerStock decimal.Decimal
+		for _, p := range tx.Postings {
+			if p.Account.Type == domain.AccountKindPerson && p.Account.ID != nil && p.Account.ID.ID == "42" {
+				if p.Asset.Type == domain.AssetTypeMonas {
+					buyerCash = p.Amount
+				}
+				if p.Asset.Type == domain.AssetTypeStock {
+					buyerStock = p.Amount
+				}
+			}
+		}
+		// kupac plaća novac (−1000) i prima akcije (+10)
+		return buyerCash.Equal(decimal.NewFromInt(-1000)) && buyerStock.Equal(decimal.NewFromInt(10))
+	}), mock.Anything).Return(&domain.InterbankTransaction{Status: domain.TxStatusCommitted}, nil)
+	repo.On("UpdateOptionContractStatus", ctx, ourRouting, "c1", "EXERCISED", mock.Anything).Return(nil)
+
+	_, err := svc.ExerciseContract(ctx, 42, ourRouting, "c1")
+	require.NoError(t, err)
+	coord.AssertExpectations(t)
+	repo.AssertExpectations(t)
+}

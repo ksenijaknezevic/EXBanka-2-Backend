@@ -218,16 +218,12 @@ func (s *InterbankOptionContractService) ExerciseContract(ctx context.Context, c
 		return nil, fmt.Errorf("settlementDate je prošao")
 	}
 
-	// Konstruiši Transaction:
-	//   debit  OPTION (negotiation) za pricePerUnit * amount novca
-	//   credit buyer (PERSON)       za pricePerUnit * amount novca   ← novac kupcu (od opcije)
-	//   credit OPTION (negotiation) za amount akcija
-	//   debit  buyer (PERSON)       za amount akcija
-	//
-	// Po protokolu, OPTION pseudo-account ima i novac i akcije; "debit OPTION
-	// za novac" znači da se novac skida sa OPTION-a, ali to je interna
-	// validacija banke koja drži OPTION (= banka prodavca).
+	// Konstruiši Transaction — CALL opcija: kupac kupuje akcije po strike ceni.
+	//   buyer  PERSON  −cash, +akcije   (plaća strike × količina, prima akcije)
+	//   OPTION (negotiation) +cash, −akcije (prodavac/escrow prima novac, isporučuje akcije)
+	// Balansirano po asset-u (cash i stock zbir = 0).
 	totalCash := c.PriceAmount.Mul(decimal.NewFromInt(int64(c.Amount)))
+	amountStock := decimal.NewFromInt(int64(c.Amount))
 
 	optAccount := &domain.ForeignBankId{
 		RoutingNumber: c.NegotiationRoutingNumber,
@@ -244,22 +240,22 @@ func (s *InterbankOptionContractService) ExerciseContract(ctx context.Context, c
 	postings := []domain.Posting{
 		{
 			Account: domain.TxAccount{Type: domain.AccountKindOption, ID: optAccount},
-			Amount:  totalCash.Neg(),
+			Amount:  totalCash, // OPTION/prodavac prima novac
 			Asset:   cashAsset,
 		},
 		{
 			Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: buyerPerson},
-			Amount:  totalCash,
+			Amount:  totalCash.Neg(), // kupac plaća novac
 			Asset:   cashAsset,
 		},
 		{
 			Account: domain.TxAccount{Type: domain.AccountKindOption, ID: optAccount},
-			Amount:  decimal.NewFromInt(int64(c.Amount)),
+			Amount:  amountStock.Neg(), // OPTION/prodavac isporučuje akcije
 			Asset:   stockAsset,
 		},
 		{
 			Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: buyerPerson},
-			Amount:  decimal.NewFromInt(int64(c.Amount)).Neg(),
+			Amount:  amountStock, // kupac prima akcije
 			Asset:   stockAsset,
 		},
 	}
@@ -275,7 +271,17 @@ func (s *InterbankOptionContractService) ExerciseContract(ctx context.Context, c
 		PaymentPurpose: "OTC_EXERCISE",
 	}
 
-	// Da bismo iskoristili coordinator infrastrukturu, koristimo specijalnu
-	// rutu InitiateInterbankTransaction (analogno InitiateInterbankPayment).
-	return s.coordinator.InitiateInterbankTransaction(ctx, transaction, &callerUserID)
+	// Iskoristi coordinator infrastrukturu (2PC, analogno InitiateInterbankPayment).
+	ibTx, err := s.coordinator.InitiateInterbankTransaction(ctx, transaction, &callerUserID)
+	if err != nil {
+		return ibTx, err
+	}
+	// Na uspešan 2PC, označi ugovor iskorišćenim.
+	if ibTx != nil && ibTx.Status == domain.TxStatusCommitted {
+		now := time.Now().UTC()
+		if uerr := s.repo.UpdateOptionContractStatus(ctx, routing, id, "EXERCISED", &now); uerr != nil {
+			return ibTx, fmt.Errorf("opcija iskorišćena ali status nije upisan (reconcile): %w", uerr)
+		}
+	}
+	return ibTx, nil
 }

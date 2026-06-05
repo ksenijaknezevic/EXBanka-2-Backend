@@ -368,6 +368,10 @@ func main() {
 		cfg.InterbankRoutingNumber,
 		"", // accountPrefix se izvodi iz routingNumber-a
 	)
+	// Menjačnica auto-konverzija: kad korisnik nema račun u valuti dogovora (npr. USD),
+	// poravnanje (premium/strike) se knjiži u valuti njegovog računa (npr. RSD) po
+	// kupovnom/prodajnom kursu.
+	interbankExecutor.SetExchangeRates(exchangeService)
 	interbankCoordinator := service.NewTransactionCoordinator(
 		db,
 		interbankRepo,

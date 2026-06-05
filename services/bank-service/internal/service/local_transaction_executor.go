@@ -26,11 +26,24 @@ import (
 )
 
 // LocalTransactionExecutor — zavisnost za Coordinator i /interbank handler.
+// ExchangeRateSource — izvor kursne liste za auto-konverziju (menjačnica) kada
+// korisnik nema račun u valuti dogovora. Zadovoljava ga *exchangeService.
+type ExchangeRateSource interface {
+	GetRates(ctx context.Context) ([]domain.ExchangeRate, error)
+}
+
 type LocalTransactionExecutor struct {
 	db            *gorm.DB
 	repo          domain.InterbankRepository
 	ourRouting    int64
-	accountPrefix string // prve 3 cifre brojeva računa naše banke
+	accountPrefix string             // prve 3 cifre brojeva računa naše banke
+	rates         ExchangeRateSource // opciono: za PERSON+MONAS auto-konverziju (nil = bez konverzije)
+}
+
+// SetExchangeRates uključuje menjačnica auto-konverziju (kupovni/prodajni) za
+// PERSON+MONAS poravnanje kada korisnik nema račun u valuti dogovora.
+func (e *LocalTransactionExecutor) SetExchangeRates(src ExchangeRateSource) {
+	e.rates = src
 }
 
 // NewLocalTransactionExecutor konstruktor.
@@ -187,10 +200,15 @@ func (e *LocalTransactionExecutor) validatePosting(ctx context.Context, p domain
 			if !found {
 				return &domain.NoVoteReason{Reason: domain.NoReasonNoSuchAccount}
 			}
-			// Negativan amount = skidanje (npr. premija kupcu) → dovoljnost sredstava.
+			// Negativan amount = skidanje (premija/strike) → dovoljnost sredstava u
+			// valuti računa (uz menjačnica konverziju ako se valute razlikuju).
 			if p.Amount.IsNegative() {
+				converted, cerr := e.convertForSettlement(ctx, p.Amount, p.Asset.MonAs.Currency, acc.Valuta)
+				if cerr != nil {
+					return &domain.NoVoteReason{Reason: domain.NoReasonUnacceptableAsset}
+				}
 				avail := acc.Stanje.Sub(acc.Rezervisana)
-				if avail.LessThan(p.Amount.Abs()) {
+				if avail.LessThan(converted.Abs()) {
 					return &domain.NoVoteReason{Reason: domain.NoReasonInsufficientAsset}
 				}
 			}
@@ -310,20 +328,26 @@ func (e *LocalTransactionExecutor) reservePosting(ctx context.Context, dbTx *gor
 		res.Reserved = true
 	}
 
-	// PERSON + MONAS: razreši račun korisnika; za debit rezerviši sredstva (kao za
-	// ACCOUNT). AccountNum se pamti da bi Commit/Rollback knjižili nad tim računom.
+	// PERSON + MONAS: razreši račun korisnika i konvertuj iznos u valutu računa
+	// (menjačnica kupovni/prodajni) ako se razlikuje od valute dogovora. AccountNum
+	// + konvertovani iznos se pamte da bi Commit/Rollback knjižili tačno u valuti računa.
 	if p.Account.Type == domain.AccountKindPerson && p.Asset.Type == domain.AssetTypeMonas {
 		acc, found := e.resolvePersonAccount(ctx, dbTx, p.Account.ID.ID, p.Asset.MonAs.Currency)
 		if !found {
-			return fmt.Errorf("rezervacija: račun korisnika %s (%s) nije pronađen", p.Account.ID.ID, p.Asset.MonAs.Currency)
+			return fmt.Errorf("rezervacija: aktivan račun korisnika %s nije pronađen", p.Account.ID.ID)
+		}
+		converted, cerr := e.convertForSettlement(ctx, p.Amount, p.Asset.MonAs.Currency, acc.Valuta)
+		if cerr != nil {
+			return fmt.Errorf("konverzija premije: %w", cerr)
 		}
 		res.AccountNum = &acc.BrojRacuna
-		if p.Amount.IsNegative() {
+		res.Amount = converted // knjiži se u valuti računa (posle konverzije)
+		if converted.IsNegative() {
 			if err := dbTx.Exec(`
 				UPDATE core_banking.racun
 				SET rezervisana_sredstva = rezervisana_sredstva + ?
 				WHERE broj_racuna = ?
-			`, p.Amount.Abs(), acc.BrojRacuna).Error; err != nil {
+			`, converted.Abs(), acc.BrojRacuna).Error; err != nil {
 				return fmt.Errorf("rezervacija premije: %w", err)
 			}
 			res.Reserved = true
@@ -477,10 +501,12 @@ type personAccount struct {
 	BrojRacuna  string          `gorm:"column:broj_racuna"`
 	Stanje      decimal.Decimal `gorm:"column:stanje_racuna"`
 	Rezervisana decimal.Decimal `gorm:"column:rezervisana_sredstva"`
+	Valuta      string          `gorm:"column:valuta_oznaka"`
 }
 
-// resolvePersonAccount mapira PERSON (user id + valuta) na njegov aktivni račun
-// te valute. Vraća (račun, true) ako postoji.
+// resolvePersonAccount bira račun korisnika za poravnanje u datoj valuti dogovora:
+// prednost ima račun u TAČNOJ valuti (bez konverzije); inače RSD; inače prvi aktivan.
+// Vraća (račun + njegova valuta, true) ako postoji ijedan aktivan račun.
 func (e *LocalTransactionExecutor) resolvePersonAccount(ctx context.Context, db *gorm.DB, personID, currency string) (personAccount, bool) {
 	var acc personAccount
 	uid, err := strconv.ParseInt(personID, 10, 64)
@@ -488,14 +514,72 @@ func (e *LocalTransactionExecutor) resolvePersonAccount(ctx context.Context, db 
 		return acc, false
 	}
 	db.WithContext(ctx).Raw(`
-		SELECT r.broj_racuna, r.stanje_racuna, r.rezervisana_sredstva
+		SELECT r.broj_racuna, r.stanje_racuna, r.rezervisana_sredstva, v.oznaka AS valuta_oznaka
 		FROM core_banking.racun r
 		JOIN core_banking.valuta v ON v.id = r.id_valute
-		WHERE r.id_vlasnika = ? AND v.oznaka = ? AND r.status = 'AKTIVAN'
-		ORDER BY r.id ASC
+		WHERE r.id_vlasnika = ? AND r.status = 'AKTIVAN'
+		ORDER BY (v.oznaka = ?) DESC, (v.oznaka = 'RSD') DESC, r.id ASC
 		LIMIT 1
 	`, uid, currency).Scan(&acc)
 	return acc, acc.BrojRacuna != ""
+}
+
+// convertForSettlement konvertuje SIGNED iznos iz valute dogovora (fromCur) u
+// valutu računa (toCur) preko menjačnice (kupovni/prodajni, pivot RSD):
+//   - credit (pozitivan): strana valuta → RSD po KUPOVNOM
+//   - debit  (negativan): strana valuta → RSD po PRODAJNOM
+//
+// Ako su valute iste → 1:1. Ako nema izvora kursa → greška.
+func (e *LocalTransactionExecutor) convertForSettlement(ctx context.Context, amount decimal.Decimal, fromCur, toCur string) (decimal.Decimal, error) {
+	if fromCur == toCur {
+		return amount, nil
+	}
+	if e.rates == nil {
+		return decimal.Zero, fmt.Errorf("konverzija %s→%s nedostupna (nema izvora kursa)", fromCur, toCur)
+	}
+	rates, err := e.rates.GetRates(ctx)
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("kurs nedostupan: %w", err)
+	}
+	byCode := make(map[string]domain.ExchangeRate, len(rates))
+	for _, r := range rates {
+		byCode[r.Oznaka] = r
+	}
+	isCredit := amount.IsPositive()
+	mag := amount.Abs()
+
+	// Korak 1: obaveza u fromCur → RSD vrednost.
+	rsd := mag
+	if fromCur != "RSD" {
+		r, ok := byCode[fromCur]
+		if !ok || r.Kupovni <= 0 || r.Prodajni <= 0 {
+			return decimal.Zero, fmt.Errorf("nema kursa za %s", fromCur)
+		}
+		rate := r.Kupovni // banka kupuje stranu valutu (credit korisniku)
+		if !isCredit {
+			rate = r.Prodajni // banka prodaje stranu valutu (debit korisniku)
+		}
+		rsd = mag.Mul(decimal.NewFromFloat(rate))
+	}
+
+	// Korak 2: RSD vrednost → toCur.
+	out := rsd
+	if toCur != "RSD" {
+		r, ok := byCode[toCur]
+		if !ok || r.Kupovni <= 0 || r.Prodajni <= 0 {
+			return decimal.Zero, fmt.Errorf("nema kursa za %s", toCur)
+		}
+		div := r.Prodajni // korisnik prima toCur → banka prodaje po prodajnom
+		if !isCredit {
+			div = r.Kupovni // korisnik plaća toCur → banka kupuje po kupovnom
+		}
+		out = rsd.Div(decimal.NewFromFloat(div))
+	}
+
+	if !isCredit {
+		return out.Neg(), nil
+	}
+	return out, nil
 }
 
 // decrementPublicShares FIFO-smanjuje korisnikove public_shares za `amount`

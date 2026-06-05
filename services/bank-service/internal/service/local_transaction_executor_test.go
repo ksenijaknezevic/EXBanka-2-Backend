@@ -429,8 +429,9 @@ func personMonasPosting(routing int64, id string, amount float64, currency strin
 }
 
 func personAccountRows(mock sqlmock.Sqlmock, brojRacuna, stanje, rezervisana string) *sqlmock.Rows {
-	return mock.NewRows([]string{"broj_racuna", "stanje_racuna", "rezervisana_sredstva"}).
-		AddRow(brojRacuna, stanje, rezervisana)
+	// Valuta računa = USD (== valuta postinga u ovim testovima) → bez konverzije.
+	return mock.NewRows([]string{"broj_racuna", "stanje_racuna", "rezervisana_sredstva", "valuta_oznaka"}).
+		AddRow(brojRacuna, stanje, rezervisana, "USD")
 }
 
 func TestValidatePosting_PersonMonas_CreditValid(t *testing.T) {
@@ -475,7 +476,7 @@ func TestValidatePosting_PersonMonas_NoAccount(t *testing.T) {
 	ctx := context.Background()
 
 	dbMock.ExpectQuery("SELECT r.broj_racuna").WillReturnRows(
-		dbMock.NewRows([]string{"broj_racuna", "stanje_racuna", "rezervisana_sredstva"}))
+		dbMock.NewRows([]string{"broj_racuna", "stanje_racuna", "rezervisana_sredstva", "valuta_oznaka"}))
 
 	reason := e.validatePosting(ctx, personMonasPosting(111, "1", -100, "USD"))
 	require.NotNil(t, reason)
@@ -1190,4 +1191,73 @@ func TestReleaseShares_Inserts(t *testing.T) {
 
 	require.NoError(t, e.ReleaseShares(ctx, 1, "AAPL", 5))
 	require.NoError(t, dbMock.ExpectationsWereMet())
+}
+
+// ─── Menjačnica auto-konverzija (PERSON+MONAS, valuta dogovora != valuta računa) ──
+
+type mockRateSource struct{ rates []domain.ExchangeRate }
+
+func (m *mockRateSource) GetRates(_ context.Context) ([]domain.ExchangeRate, error) {
+	return m.rates, nil
+}
+
+func usdRates() *mockRateSource {
+	return &mockRateSource{rates: []domain.ExchangeRate{{Oznaka: "USD", Kupovni: 100, Srednji: 105, Prodajni: 110}}}
+}
+
+func TestConvertForSettlement_SameCurrency_NoChange(t *testing.T) {
+	e := NewLocalTransactionExecutor(nil, &mockInterbankRepoForExecutor{}, 111, "265")
+	out, err := e.convertForSettlement(context.Background(), decimal.NewFromInt(5), "USD", "USD")
+	require.NoError(t, err)
+	assert.True(t, out.Equal(decimal.NewFromInt(5)))
+}
+
+func TestConvertForSettlement_CreditUsesKupovni(t *testing.T) {
+	e := NewLocalTransactionExecutor(nil, &mockInterbankRepoForExecutor{}, 111, "265")
+	e.SetExchangeRates(usdRates())
+	// credit (+5 USD) → RSD po KUPOVNOM (100) = +500
+	out, err := e.convertForSettlement(context.Background(), decimal.NewFromInt(5), "USD", "RSD")
+	require.NoError(t, err)
+	assert.True(t, out.Equal(decimal.NewFromInt(500)), "got %s", out)
+}
+
+func TestConvertForSettlement_DebitUsesProdajni(t *testing.T) {
+	e := NewLocalTransactionExecutor(nil, &mockInterbankRepoForExecutor{}, 111, "265")
+	e.SetExchangeRates(usdRates())
+	// debit (-5 USD) → RSD po PRODAJNOM (110) = -550
+	out, err := e.convertForSettlement(context.Background(), decimal.NewFromInt(-5), "USD", "RSD")
+	require.NoError(t, err)
+	assert.True(t, out.Equal(decimal.NewFromInt(-550)), "got %s", out)
+}
+
+func TestConvertForSettlement_NoRateSource_Errors(t *testing.T) {
+	e := NewLocalTransactionExecutor(nil, &mockInterbankRepoForExecutor{}, 111, "265")
+	_, err := e.convertForSettlement(context.Background(), decimal.NewFromInt(5), "USD", "RSD")
+	require.Error(t, err)
+}
+
+func TestValidatePosting_PersonMonas_DebitConvertsToRSD_Sufficient(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 111, "265")
+	e.SetExchangeRates(usdRates())
+	ctx := context.Background()
+	// račun RSD, stanje 600; debit 5 USD → 550 RSD (prodajni 110) ≤ 600 → OK
+	dbMock.ExpectQuery("SELECT r.broj_racuna").WillReturnRows(
+		dbMock.NewRows([]string{"broj_racuna", "stanje_racuna", "rezervisana_sredstva", "valuta_oznaka"}).
+			AddRow("265001000001", "600", "0", "RSD"))
+	assert.Nil(t, e.validatePosting(ctx, personMonasPosting(111, "1", -5, "USD")))
+}
+
+func TestValidatePosting_PersonMonas_DebitConvertsToRSD_Insufficient(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 111, "265")
+	e.SetExchangeRates(usdRates())
+	ctx := context.Background()
+	// račun RSD, stanje 500; debit 5 USD → 550 RSD > 500 → INSUFFICIENT
+	dbMock.ExpectQuery("SELECT r.broj_racuna").WillReturnRows(
+		dbMock.NewRows([]string{"broj_racuna", "stanje_racuna", "rezervisana_sredstva", "valuta_oznaka"}).
+			AddRow("265001000001", "500", "0", "RSD"))
+	reason := e.validatePosting(ctx, personMonasPosting(111, "1", -5, "USD"))
+	require.NotNil(t, reason)
+	assert.Equal(t, domain.NoReasonInsufficientAsset, reason.Reason)
 }
