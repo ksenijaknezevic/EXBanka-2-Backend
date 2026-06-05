@@ -25,13 +25,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// LocalTransactionExecutor — zavisnost za Coordinator i /interbank handler.
 // ExchangeRateSource — izvor kursne liste za auto-konverziju (menjačnica) kada
 // korisnik nema račun u valuti dogovora. Zadovoljava ga *exchangeService.
 type ExchangeRateSource interface {
 	GetRates(ctx context.Context) ([]domain.ExchangeRate, error)
 }
 
+// LocalTransactionExecutor — zavisnost za Coordinator i /interbank handler.
 type LocalTransactionExecutor struct {
 	db            *gorm.DB
 	repo          domain.InterbankRepository
