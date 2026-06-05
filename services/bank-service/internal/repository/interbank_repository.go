@@ -532,10 +532,13 @@ func (r *interbankRepository) UpdateNegotiation(ctx context.Context, n *domain.I
 }
 
 func (r *interbankRepository) ListNegotiations(ctx context.Context, filter domain.ListInterbankNegotiationsFilter) ([]domain.InterbankNegotiation, error) {
+	// Naša banka je strana u pregovoru ako je kupac ILI prodavac na našem routing-u
+	// (buyer-side: pregovor hostuje druga banka, ali smo mi kupac).
 	q := r.db.WithContext(ctx).
-		Where("negotiation_routing_number = ?", filter.NegotiationRoutingNumber)
-	if filter.SellerID != nil {
-		q = q.Where("seller_routing_number = ? AND seller_id = ?", filter.NegotiationRoutingNumber, *filter.SellerID)
+		Where("buyer_routing_number = ? OR seller_routing_number = ?", filter.OurRoutingNumber, filter.OurRoutingNumber)
+	if filter.ClientUserID != nil {
+		q = q.Where("(buyer_routing_number = ? AND buyer_id = ?) OR (seller_routing_number = ? AND seller_id = ?)",
+			filter.OurRoutingNumber, *filter.ClientUserID, filter.OurRoutingNumber, *filter.ClientUserID)
 	}
 	var models []interbankNegotiationModel
 	if err := q.Order("updated_at DESC").Find(&models).Error; err != nil {

@@ -395,10 +395,11 @@ type InterbankNegotiation struct {
 	UpdatedAt                 time.Time
 }
 
-// ListInterbankNegotiationsFilter — filter za listu OTC pregovora koje mi hostujemo.
+// ListInterbankNegotiationsFilter — filter za listu OTC pregovora u kojima je naša
+// banka strana (kupac ILI prodavac), bez obzira ko hostuje pregovor (autoritet).
 type ListInterbankNegotiationsFilter struct {
-	NegotiationRoutingNumber int64   // pregovori koje hostujemo (naš routing)
-	SellerID                 *string // opciono: samo gde je prodavac ovaj korisnik (CLIENT)
+	OurRoutingNumber int64   // naš routing (npr. 265) — pregovori gde smo kupac ili prodavac
+	ClientUserID     *string // opciono (CLIENT): samo gde je ovaj korisnik kupac ili prodavac
 }
 
 // InterbankOptionContract — opcioni ugovor po prihvaćenoj OTC ponudi.

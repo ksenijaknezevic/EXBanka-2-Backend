@@ -408,7 +408,7 @@ func TestInterbankOTC_ListNegotiations_ClientFiltersBySeller(t *testing.T) {
 		BuyerRoutingNumber: 222, BuyerID: "C-1", Status: "OPEN", IsOngoing: true,
 	}}
 	repo.On("ListNegotiations", ctx, domain.ListInterbankNegotiationsFilter{
-		NegotiationRoutingNumber: ourRouting, SellerID: &sellerID,
+		OurRoutingNumber: ourRouting, ClientUserID: &sellerID,
 	}).Return(want, nil)
 
 	got, err := svc.ListNegotiations(ctx, &sellerID)
@@ -424,7 +424,7 @@ func TestInterbankOTC_ListNegotiations_EmployeeNoSellerFilter(t *testing.T) {
 	svc := service.NewInterbankOTCService(repo, ourRouting)
 
 	repo.On("ListNegotiations", ctx, domain.ListInterbankNegotiationsFilter{
-		NegotiationRoutingNumber: ourRouting, SellerID: nil,
+		OurRoutingNumber: ourRouting, ClientUserID: nil,
 	}).Return([]domain.InterbankNegotiation{}, nil)
 
 	got, err := svc.ListNegotiations(ctx, nil)
