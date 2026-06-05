@@ -213,6 +213,28 @@ func TestAcceptNegotiation_PremiumFails_ReleasesShares(t *testing.T) {
 	coord.AssertExpectations(t)
 }
 
+// Kad banka kupca vrati INSUFFICIENT_ASSET, vraćamo jasnu korisničku poruku
+// (FE je prikazuje umesto generičke „interna greška").
+func TestAcceptNegotiation_PremiumRejected_InsufficientAsset(t *testing.T) {
+	repo := &mockInterbankRepo{}
+	coord := &mockAcceptCoordinator{}
+	ctx := context.Background()
+	svc := service.NewInterbankOptionContractService(repo, coord, ourRouting)
+
+	n := activeNegotiation()
+	n.SellerID = "1"
+	repo.On("GetNegotiationByID", ctx, ourRouting, "neg1").Return(n, nil)
+	coord.On("BlockShares", ctx, int64(1), "AAPL", int32(10)).Return(nil)
+	coord.On("InitiateInterbankTransaction", ctx, mock.Anything, mock.Anything).
+		Return((*domain.InterbankTransaction)(nil), errors.New("interbank tx: druga banka odbila: INSUFFICIENT_ASSET"))
+	coord.On("ReleaseShares", ctx, int64(1), "AAPL", int32(10)).Return(nil)
+
+	err := svc.AcceptNegotiation(ctx, ourRouting, "neg1")
+	require.Error(t, err)
+	assert.Equal(t, "kupac nema dovoljno sredstava za premiju", err.Error())
+	repo.AssertNotCalled(t, "CreateOptionContract", mock.Anything, mock.Anything)
+}
+
 func TestAcceptNegotiation_InsufficientShares_NoPremium(t *testing.T) {
 	repo := &mockInterbankRepo{}
 	coord := &mockAcceptCoordinator{}

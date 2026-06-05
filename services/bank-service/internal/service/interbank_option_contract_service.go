@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"banka-backend/services/bank-service/internal/domain"
@@ -108,7 +109,11 @@ func (s *InterbankOptionContractService) AcceptNegotiation(ctx context.Context, 
 			return fmt.Errorf("naplata premije nije uspela; kompenzacija blokade takođe (RECONCILE): premija=%v release=%w", err, relErr)
 		}
 		if err != nil {
-			return fmt.Errorf("naplata premije: %w", err)
+			// Prevedi najčešći NoVoteReason u jasnu, korisničku poruku (FE je prikazuje).
+			if strings.Contains(err.Error(), string(domain.NoReasonInsufficientAsset)) {
+				return fmt.Errorf("kupac nema dovoljno sredstava za premiju")
+			}
+			return fmt.Errorf("druga banka je odbila naplatu premije: %w", err)
 		}
 		return fmt.Errorf("naplata premije nije izvršena (premija nije naplaćena)")
 	}
