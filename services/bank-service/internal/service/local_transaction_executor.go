@@ -241,10 +241,18 @@ func (e *LocalTransactionExecutor) validatePosting(ctx context.Context, p domain
 		}
 
 	case domain.AccountKindOption:
-		// OPTION pseudo-account — proveri da opcija postoji, da nije iskorišćena
-		// i da ima validan amount.
+		// OPTION pseudo-account.
 		if p.Account.ID == nil {
 			return &domain.NoVoteReason{Reason: domain.NoReasonOptionNegotiationNotFound}
+		}
+		// Izdavanje opcije (accept, §3.6): OPTION nalog + OPTION asset. Ugovor još
+		// ne postoji (kreira se ACTIVE na 2PC commit-u) → ne tražimo postojeći
+		// ACTIVE, samo nenulti amount. Exercise (MONAS/STOCK) zadržava staru proveru.
+		if p.Asset.Type == domain.AssetTypeOption {
+			if p.Amount.IsZero() {
+				return &domain.NoVoteReason{Reason: domain.NoReasonOptionAmountIncorrect}
+			}
+			return nil
 		}
 		c, err := e.repo.GetOptionContract(ctx, p.Account.ID.RoutingNumber, p.Account.ID.ID)
 		if err != nil || c == nil {
@@ -416,8 +424,10 @@ func (e *LocalTransactionExecutor) Commit(ctx context.Context, ibTxID int64) err
 					}
 				}
 			}
-			// OPTION account — prilikom Commit-a se opcija označava kao iskorišćena.
-			if r.AccountKind == domain.AccountKindOption {
+			// OPTION account na EXERCISE (MONAS/STOCK leg) → opcija iskorišćena.
+			// Na IZDAVANJU (OPTION asset, accept) status se NE dira — ugovor se
+			// kreira ACTIVE post-commit u AcceptNegotiation.
+			if r.AccountKind == domain.AccountKindOption && r.AssetType != domain.AssetTypeOption {
 				if err := e.repo.UpdateOptionContractStatus(ctx, *r.ForeignRoutingNumber, *r.ForeignID, "EXERCISED", ptrTime(time.Now().UTC())); err != nil {
 					return err
 				}

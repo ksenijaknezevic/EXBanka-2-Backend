@@ -100,7 +100,7 @@ func (s *InterbankOptionContractService) AcceptNegotiation(ctx context.Context, 
 	}
 
 	// 2) Naplati premiju sinhrono preko 2PC (kupac PERSON −premium / prodavac PERSON +premium).
-	ibTx, err := s.coordinator.InitiateInterbankTransaction(ctx, s.buildPremiumTransaction(n), &sellerUserID)
+	ibTx, err := s.coordinator.InitiateInterbankTransaction(ctx, s.buildAcceptTransaction(n), &sellerUserID)
 	committed := err == nil && ibTx != nil && ibTx.Status == domain.TxStatusCommitted
 	if !committed {
 		// Premija nije naplaćena → kompenzuj blokadu, pregovaranje ostaje otvoreno.
@@ -161,18 +161,39 @@ func contractFromNegotiation(n *domain.InterbankNegotiation) *domain.InterbankOp
 	}
 }
 
-// buildPremiumTransaction — balansirana premium transakcija: kupac plaća, prodavac prima.
-func (s *InterbankOptionContractService) buildPremiumTransaction(n *domain.InterbankNegotiation) domain.Transaction {
+// buildAcceptTransaction — balansirana accept transakcija po si-tx-proto §3.6:
+//
+//	premium par (kupac PERSON −premium / prodavac PERSON +premium) +
+//	option-issuance par (OPTION{naš,negId} −1 / kupac PERSON +1, asset OPTION).
+//
+// Bez option-legova premium nije vezan za OptionAsset → peer gate odbija sa
+// UNACCEPTABLE_ASSET (anti-fraud). Ugovor se aktivira (ACTIVE) na 2PC commit.
+func (s *InterbankOptionContractService) buildAcceptTransaction(n *domain.InterbankNegotiation) domain.Transaction {
 	buyer := &domain.ForeignBankId{RoutingNumber: n.BuyerRoutingNumber, ID: n.BuyerID}
 	seller := &domain.ForeignBankId{RoutingNumber: n.SellerRoutingNumber, ID: n.SellerID}
-	asset := domain.Asset{Type: domain.AssetTypeMonas, MonAs: &domain.MonetaryAsset{Currency: n.PremiumCurrency}}
+	premiumAsset := domain.Asset{Type: domain.AssetTypeMonas, MonAs: &domain.MonetaryAsset{Currency: n.PremiumCurrency}}
+
+	optID := domain.ForeignBankId{RoutingNumber: s.ourRoutingNumber, ID: n.NegotiationForeignID}
+	optionAsset := domain.Asset{Type: domain.AssetTypeOption, Option: &domain.OptionDescription{
+		NegotiationID:  optID,
+		Stock:          domain.StockDescription{Ticker: n.StockTicker},
+		PricePerUnit:   domain.MonetaryValue{Currency: n.PriceCurrency, Amount: n.PriceAmount},
+		SettlementDate: n.SettlementDate.UTC().Format(time.RFC3339),
+		Amount:         n.Amount,
+	}}
+	one := decimal.NewFromInt(1)
+
 	return domain.Transaction{
 		Postings: []domain.Posting{
-			{Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: buyer}, Amount: n.PremiumAmount.Neg(), Asset: asset},
-			{Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: seller}, Amount: n.PremiumAmount, Asset: asset},
+			// premium par
+			{Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: buyer}, Amount: n.PremiumAmount.Neg(), Asset: premiumAsset},
+			{Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: seller}, Amount: n.PremiumAmount, Asset: premiumAsset},
+			// option-issuance par (§3.6): izdavanje opcije vezuje premiju za OptionAsset
+			{Account: domain.TxAccount{Type: domain.AccountKindOption, ID: &optID}, Amount: one.Neg(), Asset: optionAsset},
+			{Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: buyer}, Amount: one, Asset: optionAsset},
 		},
 		TransactionID:  domain.ForeignBankId{RoutingNumber: s.ourRoutingNumber, ID: NewLocalKey()},
-		Message:        "OTC premium " + n.NegotiationForeignID,
+		Message:        "OTC accept " + n.NegotiationForeignID,
 		PaymentCode:    "289",
 		PaymentPurpose: "OTC_PREMIUM",
 	}

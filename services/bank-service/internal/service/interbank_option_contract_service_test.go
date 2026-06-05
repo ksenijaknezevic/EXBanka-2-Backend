@@ -145,6 +145,50 @@ func TestAcceptNegotiation_CrossBank_HappyPath(t *testing.T) {
 	repo.AssertExpectations(t)
 }
 
+// §3.6: accept NEW_TX mora imati 4 postinga — premium par + option-issuance par
+// (OPTION{naš,negId} −1 i kupac PERSON +1, asset OPTION). Bez option-legova peer
+// gate odbija premiju sa UNACCEPTABLE_ASSET.
+func TestAcceptNegotiation_SendsFourPostingsWithOptionLegs(t *testing.T) {
+	repo := &mockInterbankRepo{}
+	coord := &mockAcceptCoordinator{}
+	ctx := context.Background()
+	svc := service.NewInterbankOptionContractService(repo, coord, ourRouting)
+
+	n := activeNegotiation()
+	n.SellerID = "1"
+	n.BuyerID = "2"
+	repo.On("GetNegotiationByID", ctx, ourRouting, "neg1").Return(n, nil)
+	coord.On("BlockShares", ctx, int64(1), "AAPL", int32(10)).Return(nil)
+	coord.On("InitiateInterbankTransaction", ctx, mock.MatchedBy(func(tx domain.Transaction) bool {
+		if len(tx.Postings) != 4 {
+			return false
+		}
+		monas, option := 0, 0
+		optMinusOne, buyerPlusOneOption := false, false
+		for _, p := range tx.Postings {
+			switch p.Asset.Type {
+			case domain.AssetTypeMonas:
+				monas++
+			case domain.AssetTypeOption:
+				option++
+				if p.Account.Type == domain.AccountKindOption && p.Amount.Equal(decimal.NewFromInt(-1)) {
+					optMinusOne = true
+				}
+				if p.Account.Type == domain.AccountKindPerson && p.Account.ID != nil && p.Account.ID.ID == "2" && p.Amount.Equal(decimal.NewFromInt(1)) {
+					buyerPlusOneOption = true
+				}
+			}
+		}
+		return monas == 2 && option == 2 && optMinusOne && buyerPlusOneOption
+	}), mock.Anything).Return(&domain.InterbankTransaction{Status: domain.TxStatusCommitted}, nil)
+	repo.On("CreateOptionContract", ctx, mock.Anything).Return(nil)
+	repo.On("UpdateNegotiation", ctx, mock.Anything).Return(nil)
+
+	err := svc.AcceptNegotiation(ctx, ourRouting, "neg1")
+	require.NoError(t, err)
+	coord.AssertExpectations(t)
+}
+
 func TestAcceptNegotiation_PremiumFails_ReleasesShares(t *testing.T) {
 	repo := &mockInterbankRepo{}
 	coord := &mockAcceptCoordinator{}

@@ -537,6 +537,59 @@ func TestValidatePosting_PersonStock_EmptyTicker(t *testing.T) {
 	assert.Equal(t, domain.NoReasonNoSuchAsset, reason.Reason)
 }
 
+// §3.6 izdavanje: OPTION nalog + OPTION asset (accept) prolazi BEZ postojećeg
+// ACTIVE ugovora (ugovor se kreira na 2PC commit-u).
+func TestValidatePosting_OptionIssuance_NoContractRequired(t *testing.T) {
+	db, _ := newGormDB(t)
+	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 111, "265")
+	ctx := context.Background()
+
+	p := domain.Posting{
+		Account: domain.TxAccount{Type: domain.AccountKindOption, ID: &domain.ForeignBankId{RoutingNumber: 111, ID: "neg1"}},
+		Amount:  decimal.NewFromInt(-1),
+		Asset: domain.Asset{Type: domain.AssetTypeOption, Option: &domain.OptionDescription{
+			NegotiationID: domain.ForeignBankId{RoutingNumber: 111, ID: "neg1"},
+			Stock:         domain.StockDescription{Ticker: "AAPL"},
+			Amount:        10,
+		}},
+	}
+	reason := e.validatePosting(ctx, p)
+	assert.Nil(t, reason)
+}
+
+func TestValidatePosting_OptionIssuance_ZeroAmount(t *testing.T) {
+	db, _ := newGormDB(t)
+	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 111, "265")
+	ctx := context.Background()
+
+	p := domain.Posting{
+		Account: domain.TxAccount{Type: domain.AccountKindOption, ID: &domain.ForeignBankId{RoutingNumber: 111, ID: "neg1"}},
+		Amount:  decimal.Zero,
+		Asset:   domain.Asset{Type: domain.AssetTypeOption, Option: &domain.OptionDescription{NegotiationID: domain.ForeignBankId{RoutingNumber: 111, ID: "neg1"}}},
+	}
+	reason := e.validatePosting(ctx, p)
+	require.NotNil(t, reason)
+	assert.Equal(t, domain.NoReasonOptionAmountIncorrect, reason.Reason)
+}
+
+// Exercise (OPTION nalog + MONAS asset) i dalje zahteva postojeći ugovor.
+func TestValidatePosting_OptionExercise_RequiresContract(t *testing.T) {
+	db, _ := newGormDB(t)
+	repo := &mockInterbankRepoForExecutor{}
+	repo.On("GetOptionContract", mock.Anything, int64(111), "neg1").Return(nil, nil)
+	e := NewLocalTransactionExecutor(db, repo, 111, "265")
+	ctx := context.Background()
+
+	p := domain.Posting{
+		Account: domain.TxAccount{Type: domain.AccountKindOption, ID: &domain.ForeignBankId{RoutingNumber: 111, ID: "neg1"}},
+		Amount:  decimal.NewFromInt(100),
+		Asset:   domain.Asset{Type: domain.AssetTypeMonas, MonAs: &domain.MonetaryAsset{Currency: "USD"}},
+	}
+	reason := e.validatePosting(ctx, p)
+	require.NotNil(t, reason)
+	assert.Equal(t, domain.NoReasonOptionNegotiationNotFound, reason.Reason)
+}
+
 func TestValidatePosting_PersonOption_Valid(t *testing.T) {
 	db, _ := newGormDB(t)
 	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 111, "265")
