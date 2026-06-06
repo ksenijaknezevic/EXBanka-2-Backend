@@ -184,7 +184,7 @@ func (s *InterbankOptionContractService) buildAcceptTransaction(n *domain.Interb
 		Stock:          domain.StockDescription{Ticker: n.StockTicker},
 		PricePerUnit:   domain.MonetaryValue{Currency: n.PriceCurrency, Amount: n.PriceAmount},
 		SettlementDate: n.SettlementDate.UTC().Format(time.RFC3339),
-		Amount:         n.Amount,
+		Amount:         decimal.NewFromInt(int64(n.Amount)),
 	}}
 	one := decimal.NewFromInt(1)
 

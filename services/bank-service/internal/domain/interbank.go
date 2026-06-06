@@ -76,7 +76,9 @@ type OptionDescription struct {
 	Stock          StockDescription `json:"stock"`
 	PricePerUnit   MonetaryValue    `json:"pricePerUnit"`
 	SettlementDate string           `json:"settlementDate"` // ISO8601
-	Amount         int32            `json:"amount"`
+	// Amount je decimal jer peer banke šalju decimalnu količinu (npr. 4.0000);
+	// int32 bi obarao json.Unmarshal celog NEW_TX-a (premium nije naplaćen).
+	Amount decimal.Decimal `json:"amount"`
 }
 
 // Asset — sum-type sa diskriminatorom "type".

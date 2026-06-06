@@ -550,7 +550,7 @@ func TestValidatePosting_OptionIssuance_NoContractRequired(t *testing.T) {
 		Asset: domain.Asset{Type: domain.AssetTypeOption, Option: &domain.OptionDescription{
 			NegotiationID: domain.ForeignBankId{RoutingNumber: 111, ID: "neg1"},
 			Stock:         domain.StockDescription{Ticker: "AAPL"},
-			Amount:        10,
+			Amount:        decimal.NewFromInt(10),
 		}},
 	}
 	reason := e.validatePosting(ctx, p)
