@@ -291,6 +291,9 @@ type ListOTCOffersFilter struct {
 	// "" | "ALL" = sve, "OWN" = intra-bank, "INTERBANK" = cross-bank ponude.
 	BankFilter string
 	OwnBankID  int64 // ID naše banke — potreban za filtriranje
+	// UserType ("CLIENT"|"EMPLOYEE"|"ADMIN") — vidljivost po ulozi: klijent vidi
+	// samo ponude gde je protivstrana klijent; zaposleni samo gde je zaposleni.
+	UserType string
 }
 
 // ─── Repository i Service interfejsi ─────────────────────────────────────────

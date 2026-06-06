@@ -407,19 +407,23 @@ func (e *LocalTransactionExecutor) Commit(ctx context.Context, ibTxID int64) err
 					}
 				}
 			}
-			// PERSON + STOCK pozitivni: kupac dobija akcije — u ovom MVP modelu
-			// upisujemo ih u public_shares kao "primljeno"; punu portfolio tabelu
-			// ne diramo (codebase je nema striktno).
+			// PERSON + STOCK pozitivni: kupac dobija akcije → idu u PORTFOLIO
+			// (sintetički DONE BUY nalog, isto kao lokalni OTC exercise), NE u javni
+			// režim. Korisnik ih kasnije sam objavljuje (/bank/portfolio/publish).
 			if r.AccountKind == domain.AccountKindPerson && r.AssetType == domain.AssetTypeStock && r.Amount.IsPositive() {
 				userID, _ := strconv.ParseInt(*r.ForeignID, 10, 64)
 				ticker := *r.AssetTicker
 				var listingID int64
 				dbTx.Raw(`SELECT id FROM core_banking.listing WHERE ticker = ?`, ticker).Scan(&listingID)
-				if listingID > 0 {
+				var accountID int64
+				dbTx.Raw(`SELECT id FROM core_banking.racun WHERE id_vlasnika = ? AND status = 'AKTIVAN' ORDER BY id LIMIT 1`, userID).Scan(&accountID)
+				if listingID > 0 && accountID > 0 {
 					if err := dbTx.Exec(`
-						INSERT INTO core_banking.public_shares (listing_id, user_id, quantity)
-						VALUES (?, ?, ?)
-					`, listingID, userID, r.Amount.IntPart()).Error; err != nil {
+						INSERT INTO core_banking.orders
+						  (user_id, account_id, listing_id, order_type, direction, quantity, contract_size,
+						   status, is_done, remaining_portions, after_hours, all_or_none, margin, last_modified, created_at)
+						VALUES (?, ?, ?, 'MARKET', 'BUY', ?, 1, 'DONE', TRUE, 0, FALSE, FALSE, FALSE, now(), now())
+					`, userID, accountID, listingID, r.Amount.IntPart()).Error; err != nil {
 						return err
 					}
 				}

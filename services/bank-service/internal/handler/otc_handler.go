@@ -78,7 +78,7 @@ func (h *OTCHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case http.MethodPost:
 			h.handleCreate(w, r, callerID)
 		case http.MethodGet:
-			h.handleList(w, r, callerID)
+			h.handleList(w, r, callerID, callerType)
 		default:
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
@@ -434,9 +434,9 @@ func (h *OTCHandler) handleMarketplace(w http.ResponseWriter, r *http.Request, c
 	writeOTCJSON(w, http.StatusOK, out)
 }
 
-func (h *OTCHandler) handleList(w http.ResponseWriter, r *http.Request, callerID int64) {
+func (h *OTCHandler) handleList(w http.ResponseWriter, r *http.Request, callerID int64, callerType string) {
 	q := r.URL.Query()
-	filter := domain.ListOTCOffersFilter{UserID: callerID, OwnBankID: h.ownBankID}
+	filter := domain.ListOTCOffersFilter{UserID: callerID, OwnBankID: h.ownBankID, UserType: callerType}
 	if s := q.Get("status"); s != "" {
 		v := domain.OTCOfferStatus(strings.ToUpper(s))
 		filter.Status = &v

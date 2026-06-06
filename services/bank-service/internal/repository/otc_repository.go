@@ -399,6 +399,17 @@ func (r *otcRepository) ListOffers(ctx context.Context, filter domain.ListOTCOff
 		}
 	}
 
+	// Vidljivost po ulozi: klijent vidi samo ponude gde je PROTIVSTRANA klijent;
+	// zaposleni (supervizor/agent) samo gde je protivstrana zaposleni (actuary_info).
+	switch filter.UserType {
+	case "CLIENT":
+		q = q.Where(`NOT EXISTS (SELECT 1 FROM core_banking.actuary_info ai
+			WHERE ai.employee_id = CASE WHEN o.buyer_id = ? THEN o.seller_id ELSE o.buyer_id END)`, filter.UserID)
+	case "EMPLOYEE", "ADMIN":
+		q = q.Where(`EXISTS (SELECT 1 FROM core_banking.actuary_info ai
+			WHERE ai.employee_id = CASE WHEN o.buyer_id = ? THEN o.seller_id ELSE o.buyer_id END)`, filter.UserID)
+	}
+
 	var rows []row
 	if err := q.Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list otc offers: %w", err)
