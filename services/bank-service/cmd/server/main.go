@@ -366,7 +366,7 @@ func main() {
 		db,
 		interbankRepo,
 		cfg.InterbankRoutingNumber,
-		"", // accountPrefix se izvodi iz routingNumber-a
+		cfg.InterbankAccountPrefix, // npr. "666" — kod naših računa ≠ routing 265
 	)
 	// Menjačnica auto-konverzija: kad korisnik nema račun u valuti dogovora (npr. USD),
 	// poravnanje (premium/strike) se knjiži u valuti njegovog računa (npr. RSD) po

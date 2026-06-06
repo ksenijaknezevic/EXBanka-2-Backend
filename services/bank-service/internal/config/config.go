@@ -89,8 +89,13 @@ type Config struct {
 	OwnBankID int64 // env: BANK_ID
 
 	// ── Interbank (si-tx-proto) ──────────────────────────────────────────────
-	// InterbankRoutingNumber — routingNumber ove banke (prve 3 cifre brojeva računa).
+	// InterbankRoutingNumber — routingNumber ove banke (za PERSON/OPTION adresiranje
+	// u si-tx-proto). NB: NIJE isto što i prefiks broja računa (vidi dole).
 	InterbankRoutingNumber int64 // env: INTERBANK_ROUTING_NUMBER
+	// InterbankAccountPrefix — prve cifre NAŠIH brojeva računa (bankarski kod, npr.
+	// "666"). Koristi se da se ACCOUNT-num posting prepozna kao lokalan. Razlikuje se
+	// od routingNumber-a (265); ako se izostavi, izvodi se iz routingNumber-a.
+	InterbankAccountPrefix string // env: INTERBANK_ACCOUNT_PREFIX (default "666")
 	// InterbankAPIKey — naš API ključ koji druga banka mora poslati u X-Api-Key
 	// kada šalje zahtev na /interbank ili na OTC endpoint-e.
 	InterbankAPIKey string // env: INTERBANK_API_KEY
@@ -164,6 +169,7 @@ func Load() (*Config, error) {
 		OwnBankID:                     getEnvInt64("BANK_ID", 1),
 
 		InterbankRoutingNumber:       getEnvInt64("INTERBANK_ROUTING_NUMBER", 0),
+		InterbankAccountPrefix:       getEnv("INTERBANK_ACCOUNT_PREFIX", "666"),
 		InterbankAPIKey:              os.Getenv("INTERBANK_API_KEY"),
 		InterbankPeerBaseURL:         os.Getenv("INTERBANK_PEER_BASE_URL"),
 		InterbankPeerAPIKey:          os.Getenv("INTERBANK_PEER_API_KEY"),

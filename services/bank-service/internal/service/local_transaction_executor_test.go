@@ -1314,3 +1314,32 @@ func TestValidatePosting_PersonMonas_DebitConvertsToRSD_Insufficient(t *testing.
 	require.NotNil(t, reason)
 	assert.Equal(t, domain.NoReasonInsufficientAsset, reason.Reason)
 }
+
+// Regresija: routingNumber (npr. 265) i prefiks broja računa (npr. "666") su
+// RAZLIČITI. Ranije se accountPrefix izvodio iz routinga → "666…" račun se
+// tretirao kao tuđ → kod odlaznog plaćanja debit se NIJE knjižio kod nas, a
+// COMMIT_TX se slao Banci 2 (oni upisali +iznos). Ovaj test čuva razdvajanje.
+func TestIsLocalPosting_AccountPrefixDiffersFromRouting(t *testing.T) {
+	e := NewLocalTransactionExecutor(nil, nil, 265, "666")
+
+	acc := func(num string) domain.Posting {
+		return domain.Posting{Account: domain.TxAccount{Type: domain.AccountKindAccount, Num: &num}}
+	}
+	person := func(rn int64) domain.Posting {
+		return domain.Posting{Account: domain.TxAccount{Type: domain.AccountKindPerson, ID: &domain.ForeignBankId{RoutingNumber: rn, ID: "x"}}}
+	}
+
+	local, err := e.isLocalPosting(acc("666000111960466030"))
+	require.NoError(t, err)
+	assert.True(t, local, "666… račun mora biti lokalan (naš)")
+
+	local, err = e.isLocalPosting(acc("222000131234567812"))
+	require.NoError(t, err)
+	assert.False(t, local, "222… (Banka 2) mora biti tuđ")
+
+	// PERSON/OPTION koriste routing, ne prefiks broja računa.
+	local, _ = e.isLocalPosting(person(265))
+	assert.True(t, local, "PERSON{265} je naš")
+	local, _ = e.isLocalPosting(person(222))
+	assert.False(t, local, "PERSON{222} je tuđ")
+}

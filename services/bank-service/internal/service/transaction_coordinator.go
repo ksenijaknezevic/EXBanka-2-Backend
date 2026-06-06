@@ -187,17 +187,25 @@ func (c *TransactionCoordinator) InitiateInterbankPayment(ctx context.Context, i
 		return nil, fmt.Errorf("interbank payment: kreiranje saga zapisa: %w", err)
 	}
 
+	// setStatus ažurira i DB i in-memory ibTx. Bez sinhronizacije in-memory polja
+	// handler/FE čitaju stale "NEW" čak i kad je transakcija COMMITTED/FAILED.
+	setStatus := func(s domain.InterbankTxStatus, step, reason string) {
+		_ = c.repo.UpdateTransactionStatus(ctx, ibTx.ID, s, step, reason)
+		ibTx.Status = s
+		ibTx.FailureReason = reason
+	}
+
 	// 2) Lokalna priprema (rezervacija sredstava pošiljaoca)
 	vote, err := c.executor.Prepare(ctx, ibTx.ID, transaction)
 	if err != nil {
-		_ = c.repo.UpdateTransactionStatus(ctx, ibTx.ID, domain.TxStatusFailed, "LOCAL_PREPARE_ERROR", err.Error())
+		setStatus(domain.TxStatusFailed, "LOCAL_PREPARE_ERROR", err.Error())
 		return ibTx, err
 	}
 	if vote.Vote == domain.VoteNo {
-		_ = c.repo.UpdateTransactionStatus(ctx, ibTx.ID, domain.TxStatusFailed, "LOCAL_PREPARE_NO", joinReasons(vote.Reasons))
+		setStatus(domain.TxStatusFailed, "LOCAL_PREPARE_NO", joinReasons(vote.Reasons))
 		return ibTx, fmt.Errorf("interbank payment: lokalna priprema vraća NO: %s", joinReasons(vote.Reasons))
 	}
-	_ = c.repo.UpdateTransactionStatus(ctx, ibTx.ID, domain.TxStatusPrepared, "LOCAL_PREPARED", "")
+	setStatus(domain.TxStatusPrepared, "LOCAL_PREPARED", "")
 
 	// 3) Pošalji NEW_TX drugoj banci
 	idemKey := domain.IdempotenceKey{
@@ -207,38 +215,38 @@ func (c *TransactionCoordinator) InitiateInterbankPayment(ctx context.Context, i
 	logRow, err := c.msgSvc.EnqueueOutgoing(ctx, domain.MessageNewTx, c.peerRoutingNumber, idemKey, transaction)
 	if err != nil {
 		_ = c.executor.Rollback(ctx, ibTx.ID)
-		_ = c.repo.UpdateTransactionStatus(ctx, ibTx.ID, domain.TxStatusFailed, "ENQUEUE_NEW_TX", err.Error())
+		setStatus(domain.TxStatusFailed, "ENQUEUE_NEW_TX", err.Error())
 		return ibTx, err
 	}
 	if err := c.msgSvc.SendMessage(ctx, logRow); err != nil {
 		// Network/misc error → ROLLBACK lokalno (ne šaljemo COMMIT bez glasa).
 		_ = c.executor.Rollback(ctx, ibTx.ID)
-		_ = c.repo.UpdateTransactionStatus(ctx, ibTx.ID, domain.TxStatusFailed, "SEND_NEW_TX", err.Error())
+		setStatus(domain.TxStatusFailed, "SEND_NEW_TX", err.Error())
 		return ibTx, err
 	}
 
 	// 4) Parse vote
 	if logRow.Status != domain.MsgStatusSent || logRow.ResponsePayload == nil {
 		// 202 Accepted ili neuspeh — ne komitujemo dok ne dobijemo YES/NO.
-		_ = c.repo.UpdateTransactionStatus(ctx, ibTx.ID, domain.TxStatusFailed, "AWAITING_REMOTE_VOTE", "remote bank not finished")
+		setStatus(domain.TxStatusFailed, "AWAITING_REMOTE_VOTE", "remote bank not finished")
 		return ibTx, fmt.Errorf("interbank payment: druga banka još nije izglasala (retry će probati ponovo)")
 	}
 	var remoteVote domain.TransactionVote
 	if err := json.Unmarshal([]byte(*logRow.ResponsePayload), &remoteVote); err != nil {
 		_ = c.executor.Rollback(ctx, ibTx.ID)
-		_ = c.repo.UpdateTransactionStatus(ctx, ibTx.ID, domain.TxStatusFailed, "PARSE_REMOTE_VOTE", err.Error())
+		setStatus(domain.TxStatusFailed, "PARSE_REMOTE_VOTE", err.Error())
 		return ibTx, err
 	}
 	if remoteVote.Vote == domain.VoteNo {
 		_ = c.executor.Rollback(ctx, ibTx.ID)
-		_ = c.repo.UpdateTransactionStatus(ctx, ibTx.ID, domain.TxStatusRolledBack, "REMOTE_VOTE_NO", joinReasons(remoteVote.Reasons))
+		setStatus(domain.TxStatusRolledBack, "REMOTE_VOTE_NO", joinReasons(remoteVote.Reasons))
 		return ibTx, fmt.Errorf("interbank payment: druga banka odbila: %s", joinReasons(remoteVote.Reasons))
 	}
 
 	// 5) Lokalni commit + COMMIT_TX poruka
 	if err := c.executor.Commit(ctx, ibTx.ID); err != nil {
 		// Lokalni commit pukao posle YES/YES → kritičan stanje, mark FAILED, traži operatora.
-		_ = c.repo.UpdateTransactionStatus(ctx, ibTx.ID, domain.TxStatusFailed, "LOCAL_COMMIT", err.Error())
+		setStatus(domain.TxStatusFailed, "LOCAL_COMMIT", err.Error())
 		return ibTx, fmt.Errorf("interbank payment: lokalni commit pukao: %w", err)
 	}
 	commitKey := domain.IdempotenceKey{
@@ -251,7 +259,7 @@ func (c *TransactionCoordinator) InitiateInterbankPayment(ctx context.Context, i
 		_ = c.msgSvc.SendMessage(ctx, commitRow)
 	}
 
-	_ = c.repo.UpdateTransactionStatus(ctx, ibTx.ID, domain.TxStatusCommitted, "COMMITTED", "")
+	setStatus(domain.TxStatusCommitted, "COMMITTED", "")
 	return ibTx, nil
 }
 
