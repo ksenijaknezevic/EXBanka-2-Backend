@@ -300,7 +300,7 @@ func (s *InterbankOptionContractService) ExerciseContract(ctx context.Context, c
 	// Iskoristi coordinator infrastrukturu (2PC, analogno InitiateInterbankPayment).
 	ibTx, err := s.coordinator.InitiateInterbankTransaction(ctx, transaction, &callerUserID)
 	if err != nil {
-		return ibTx, err
+		return ibTx, friendlyOTCError(err)
 	}
 	// Na uspešan 2PC, označi ugovor iskorišćenim.
 	if ibTx != nil && ibTx.Status == domain.TxStatusCommitted {
@@ -310,4 +310,24 @@ func (s *InterbankOptionContractService) ExerciseContract(ctx context.Context, c
 		}
 	}
 	return ibTx, nil
+}
+
+// friendlyOTCError prevodi NoVoteReason kodove (iz 2PC odbijanja) u jasne
+// korisničke poruke za exercise; nepoznate greške vraća nepromenjene.
+func friendlyOTCError(err error) error {
+	if err == nil {
+		return nil
+	}
+	m := err.Error()
+	switch {
+	case strings.Contains(m, string(domain.NoReasonNoSuchAccount)):
+		return fmt.Errorf("nemate odgovarajući račun za plaćanje opcije (strike)")
+	case strings.Contains(m, string(domain.NoReasonOptionUsedOrExpired)):
+		return fmt.Errorf("opcija je već iskorišćena ili je rok istekao")
+	case strings.Contains(m, string(domain.NoReasonInsufficientAsset)):
+		return fmt.Errorf("nemate dovoljno sredstava za izvršenje opcije")
+	case strings.Contains(m, string(domain.NoReasonNoSuchAsset)), strings.Contains(m, string(domain.NoReasonUnacceptableAsset)):
+		return fmt.Errorf("nepodržan ili nepoznat asset u transakciji")
+	}
+	return err
 }

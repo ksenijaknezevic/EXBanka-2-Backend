@@ -498,3 +498,20 @@ func TestExerciseContract_BuyerPaysCashReceivesStock_AndMarksExercised(t *testin
 	coord.AssertExpectations(t)
 	repo.AssertExpectations(t)
 }
+
+// 2PC odbijanje (NO_SUCH_ACCOUNT) → jasna korisnička poruka umesto techy greške.
+func TestExerciseContract_FriendlyError_NoSuchAccount(t *testing.T) {
+	repo := &mockInterbankRepo{}
+	coord := &mockAcceptCoordinator{}
+	ctx := context.Background()
+	svc := service.NewInterbankOptionContractService(repo, coord, ourRouting)
+
+	c := activeContract()
+	repo.On("GetOptionContract", ctx, ourRouting, "c1").Return(c, nil)
+	coord.On("InitiateInterbankTransaction", ctx, mock.Anything, mock.Anything).
+		Return((*domain.InterbankTransaction)(nil), errors.New("interbank tx: lokalna priprema vraća NO: NO_SUCH_ACCOUNT"))
+
+	_, err := svc.ExerciseContract(ctx, 42, ourRouting, "c1")
+	require.Error(t, err)
+	assert.Equal(t, "nemate odgovarajući račun za plaćanje opcije (strike)", err.Error())
+}
