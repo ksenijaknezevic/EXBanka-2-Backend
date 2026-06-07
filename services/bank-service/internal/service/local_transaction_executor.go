@@ -428,6 +428,40 @@ func (e *LocalTransactionExecutor) Commit(ctx context.Context, ibTxID int64) err
 					}
 				}
 			}
+			// OPTION + MONAS pozitivan = strani kupac iskorišćava opciju → prodavcu
+			// na NAMA stiže strike. Kreditiraj prodavčev račun (uz konverziju u valutu
+			// naloga). Bez ovoga prodavac nikad ne dobije strike kad smo mi banka-
+			// prodavac (si-tx-proto §S9). Akcije su već skinute na accept-u (BlockShares),
+			// pa se OPTION−STOCK leg ne knjiži ovde (isporučene su kupcu).
+			if r.AccountKind == domain.AccountKindOption && r.AssetType == domain.AssetTypeMonas &&
+				r.Amount.IsPositive() && r.ForeignRoutingNumber != nil && r.ForeignID != nil {
+				c, cerr := e.repo.GetOptionContract(ctx, *r.ForeignRoutingNumber, *r.ForeignID)
+				if cerr != nil {
+					return cerr
+				}
+				if c != nil && c.SellerRoutingNumber == e.ourRouting {
+					cur := ""
+					if r.AssetCurrency != nil {
+						cur = *r.AssetCurrency
+					}
+					if sellerAcc, found := e.resolvePersonAccount(ctx, dbTx, c.SellerID, cur); found {
+						credited := r.Amount
+						if conv, err := e.convertForSettlement(ctx, r.Amount, cur, sellerAcc.Valuta); err == nil {
+							credited = conv
+						}
+						if err := dbTx.Exec(`
+							UPDATE core_banking.racun
+							SET stanje_racuna = stanje_racuna + ?
+							WHERE broj_racuna = ?
+						`, credited, sellerAcc.BrojRacuna).Error; err != nil {
+							return err
+						}
+						if err := writeTxRow(dbTx, sellerAcc.BrojRacuna, "INTERBANK", credited, "Interbank UPLATA (OTC exercise)"); err != nil {
+							return err
+						}
+					}
+				}
+			}
 			// OPTION account na EXERCISE (MONAS/STOCK leg) → opcija iskorišćena.
 			// Na IZDAVANJU (OPTION asset, accept) status se NE dira — ugovor se
 			// kreira ACTIVE post-commit u AcceptNegotiation.

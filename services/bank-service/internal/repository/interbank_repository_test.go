@@ -65,3 +65,33 @@ func TestListNegotiations_PartyBased_ReturnsBuyerSide(t *testing.T) {
 	assert.Equal(t, "4", out[0].BuyerID)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestListExpiredActiveContracts_ReturnsActiveOverdue(t *testing.T) {
+	db, mock := newRepoGormDB(t)
+	repo := NewInterbankRepository(db)
+	ctx := context.Background()
+
+	cols := []string{
+		"id", "negotiation_routing_number", "negotiation_foreign_id", "stock_ticker",
+		"price_currency", "price_amount", "premium_currency", "premium_amount",
+		"settlement_date", "amount", "buyer_routing_number", "buyer_id",
+		"seller_routing_number", "seller_id", "status", "used_at", "created_at", "updated_at",
+	}
+	past := time.Now().Add(-48 * time.Hour)
+	rows := sqlmock.NewRows(cols).AddRow(
+		int64(1), int64(265), "neg1", "AAPL",
+		"USD", "100", "USD", "5",
+		past, int32(5), int64(222), "C-2",
+		int64(265), "2", "ACTIVE", nil, past, past,
+	)
+	// Mora filtrirati po isteklom settlement_date (i statusu ACTIVE).
+	mock.ExpectQuery("settlement_date <").WillReturnRows(rows)
+
+	out, err := repo.ListExpiredActiveContracts(ctx, time.Now())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	assert.Equal(t, "neg1", out[0].NegotiationForeignID)
+	assert.Equal(t, "ACTIVE", out[0].Status)
+	assert.Equal(t, int32(5), out[0].Amount)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

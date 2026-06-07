@@ -457,6 +457,9 @@ type InterbankRepository interface {
 	GetOptionContract(ctx context.Context, routingNumber int64, foreignID string) (*InterbankOptionContract, error)
 	UpdateOptionContractStatus(ctx context.Context, routingNumber int64, foreignID, status string, usedAt *time.Time) error
 	ListContractsForUser(ctx context.Context, routingNumber int64, userID string) ([]InterbankOptionContract, error)
+	// ListExpiredActiveContracts — ACTIVE ugovori čiji je settlementDate prošao
+	// (za inter-bank expiry worker §S10).
+	ListExpiredActiveContracts(ctx context.Context, before time.Time) ([]InterbankOptionContract, error)
 }
 
 // ─── Service interfejsi ──────────────────────────────────────────────────────

@@ -62,6 +62,9 @@ func (m *mockInterbankRepo) UpdateTransactionStatus(ctx context.Context, id int6
 func (m *mockInterbankRepo) CreateReservation(ctx context.Context, r *domain.InterbankReservation) error {
 	return m.Called(ctx, r).Error(0)
 }
+func (m *mockInterbankRepo) ListExpiredActiveContracts(ctx context.Context, before time.Time) ([]domain.InterbankOptionContract, error) {
+	return nil, nil
+}
 func (m *mockInterbankRepo) ListReservationsByTx(ctx context.Context, txID int64) ([]domain.InterbankReservation, error) {
 	args := m.Called(ctx, txID)
 	if args.Get(0) == nil {

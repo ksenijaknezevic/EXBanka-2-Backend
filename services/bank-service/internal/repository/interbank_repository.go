@@ -658,6 +658,21 @@ func (r *interbankRepository) ListContractsForUser(ctx context.Context, routingN
 	return out, nil
 }
 
+func (r *interbankRepository) ListExpiredActiveContracts(ctx context.Context, before time.Time) ([]domain.InterbankOptionContract, error) {
+	var rows []interbankOptionContractModel
+	err := r.db.WithContext(ctx).
+		Where("status = ? AND settlement_date < ?", "ACTIVE", before).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.InterbankOptionContract, 0, len(rows))
+	for i := range rows {
+		out = append(out, *optToDomain(&rows[i]))
+	}
+	return out, nil
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 // int64ToString — interno (izbegava strconv import na vrhu).

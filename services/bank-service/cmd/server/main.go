@@ -580,6 +580,11 @@ func main() {
 	otcContractExpiryWorker := worker.NewOTCContractExpiryWorker(otcRepo, otcNotifier)
 	go otcContractExpiryWorker.Start(ctx)
 
+	// ── 7e4. Daily scan: ACTIVE inter-bank opcije past settlementDate → EXPIRED.
+	// Kad smo MI prodavac, vraćamo prodavčeve blokirane akcije (premija ostaje). §S10
+	interbankExpiryWorker := worker.NewInterbankOptionExpiryWorker(interbankRepo, interbankExecutor, cfg.InterbankRoutingNumber)
+	go interbankExpiryWorker.Start(ctx)
+
 	// ── 7c. Start ListingRefresherWorker (osvežava cene hartija periodično) ────
 	listingRefreshInterval := time.Duration(cfg.ListingRefreshIntervalMinutes) * time.Minute
 	listingRefresherWorker := worker.NewListingRefresherWorker(listingRepo, listingRefreshInterval, cfg.EODHDAPIKey, cfg.FinnhubAPIKey, cfg.AlphaVantageAPIKey, cfg.ListingRequireLiveQuotes, compositeTickPublisher)

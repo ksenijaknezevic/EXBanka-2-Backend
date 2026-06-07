@@ -195,6 +195,10 @@ func (m *mockInterbankRepoForExecutor) UpdateTransactionStatus(ctx context.Conte
 func (m *mockInterbankRepoForExecutor) CreateReservation(ctx context.Context, r *domain.InterbankReservation) error {
 	return m.Called(ctx, r).Error(0)
 }
+func (m *mockInterbankRepoForExecutor) ListExpiredActiveContracts(ctx context.Context, before time.Time) ([]domain.InterbankOptionContract, error) {
+	return nil, nil
+}
+
 func (m *mockInterbankRepoForExecutor) ListReservationsByTx(ctx context.Context, txID int64) ([]domain.InterbankReservation, error) {
 	args := m.Called(ctx, txID)
 	if args.Get(0) == nil {
@@ -1342,4 +1346,49 @@ func TestIsLocalPosting_AccountPrefixDiffersFromRouting(t *testing.T) {
 	assert.True(t, local, "PERSON{265} je naš")
 	local, _ = e.isLocalPosting(person(222))
 	assert.False(t, local, "PERSON{222} je tuđ")
+}
+
+// #3 (S9): kad smo MI banka-prodavac i strani kupac iskoristi opciju, OPTION+MONAS
+// pozitivan leg (strike) mora KREDITIRATI prodavčev račun — ranije je Commit za
+// OPTION nalog samo flipovao status (prodavac nije dobijao novac).
+func TestCommit_OptionMonasPositive_CreditsSeller(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	repo := &mockInterbankRepoForExecutor{}
+	e := NewLocalTransactionExecutor(db, repo, 111, "265")
+	ctx := context.Background()
+
+	rn := int64(111)
+	fid := "neg1"
+	cur := "USD"
+	resv := domain.InterbankReservation{
+		InterbankTransactionID: 20,
+		AccountKind:            domain.AccountKindOption,
+		AssetType:              domain.AssetTypeMonas,
+		Amount:                 decimal.NewFromInt(200), // strike ukupno; prodavac prima
+		ForeignRoutingNumber:   &rn,
+		ForeignID:              &fid,
+		AssetCurrency:          &cur,
+	}
+	repo.On("ListReservationsByTx", ctx, int64(20)).Return([]domain.InterbankReservation{resv}, nil)
+	// Mi smo prodavac: SellerRoutingNumber == naš routing (111).
+	contract := &domain.InterbankOptionContract{
+		NegotiationRoutingNumber: 111, NegotiationForeignID: "neg1",
+		SellerRoutingNumber: 111, SellerID: "2", PriceCurrency: "USD",
+	}
+	repo.On("GetOptionContract", ctx, int64(111), "neg1").Return(contract, nil)
+
+	dbMock.ExpectBegin()
+	dbMock.ExpectQuery("SELECT r.broj_racuna").WillReturnRows(personAccountRows(dbMock, "265111", "1000", "0"))
+	dbMock.ExpectExec("UPDATE core_banking.racun").WillReturnResult(sqlmock.NewResult(1, 1))
+	dbMock.ExpectQuery("SELECT id FROM core_banking.racun WHERE broj_racuna").
+		WillReturnRows(dbMock.NewRows([]string{"id"}).AddRow(int64(50)))
+	dbMock.ExpectExec("INSERT INTO core_banking.transakcija").WillReturnResult(sqlmock.NewResult(1, 1))
+	repo.On("UpdateOptionContractStatus", ctx, int64(111), "neg1", "EXERCISED", mock.Anything).Return(nil)
+	repo.On("UpdateTransactionStatus", ctx, int64(20), domain.TxStatusCommitted, "COMMITTED", "").Return(nil)
+	dbMock.ExpectCommit()
+
+	err := e.Commit(ctx, 20)
+	require.NoError(t, err)
+	require.NoError(t, dbMock.ExpectationsWereMet())
+	repo.AssertCalled(t, "GetOptionContract", ctx, int64(111), "neg1")
 }
