@@ -442,27 +442,36 @@ func (f *fundsManager) CreditSellFill(ctx context.Context, accountID int64, amou
 	})
 }
 
-// ReducePublicSharesAfterSell smanjuje prodavčeve OTC-objavljene akcije
-// (core_banking.public_shares) nakon SELL filla, tako da objavljena količina nikad ne
-// prelazi broj akcija koje korisnik i dalje poseduje. FIFO-umanjuje (najstariji redovi
-// prvi) za soldQty, ograničeno na trenutno objavljeno — prodaja većeg broja nego što je
-// objavljeno NIJE greška, samo isprazni objavljene redove. Opseg prati agregaciju u
-// portfoliju (portfolio_handler.getMyPortfolio): klijent dira samo svoje redove.
+// ClampPublicSharesToHoldings ograničava prodavčeve OTC-objavljene akcije
+// (core_banking.public_shares) na broj koji korisnik i dalje poseduje: nakon prodaje
+// uklanja SAMO višak iznad poseda (FIFO, najstariji redovi prvi). Prodaja akcija koje
+// nikad nisu objavljene NE dira javnu količinu — objavljeno ostaje dok posed ne padne
+// ispod njega (npr. posed 10 / javnih 5, prodaš 3 → javnih ostaje 5; posed 8 / javnih 5,
+// prodaš 4 → javnih na 4). Opseg prati portfolio (klijent = svoje; aktuar = pool).
 //
-// Poziva se unutar SELL fill transakcije (trading/worker engine), pa su FOR UPDATE
-// zaključavanje i upisi atomični sa ostatkom filla.
-func (f *fundsManager) ReducePublicSharesAfterSell(ctx context.Context, userID, listingID, soldQty int64) error {
-	if soldQty <= 0 {
-		return nil
-	}
+// Poziva se kad SELL nalog postane DONE, unutar fill transakcije (trading/worker
+// engine), pa su FOR UPDATE zaključavanje i upisi atomični sa ostatkom filla.
+func (f *fundsManager) ClampPublicSharesToHoldings(ctx context.Context, userID, listingID int64) error {
+	// Neto posed (poravnato) — isto pravilo kao getMyPortfolio.
+	const netExpr = `COALESCE(SUM(CASE
+		WHEN direction = 'BUY'  AND status = 'DONE'     AND is_done THEN quantity
+		WHEN direction = 'BUY'  AND status = 'CANCELED'             THEN (quantity - remaining_portions)
+		WHEN direction = 'SELL' AND status = 'DONE'     AND is_done THEN -quantity
+		WHEN direction = 'SELL' AND status = 'CANCELED'             THEN -(quantity - remaining_portions)
+		ELSE 0 END), 0)`
 
+	var owned int64
 	var rows []struct {
 		ID       int64 `gorm:"column:id"`
 		Quantity int64 `gorm:"column:quantity"`
 	}
 	var err error
 	if tradingworker.IsClientFromCtx(ctx) {
-		// Klijent: samo njegovi objavljeni redovi.
+		// Klijent: njegov posed i njegovi objavljeni redovi.
+		f.db.WithContext(ctx).Raw(
+			`SELECT `+netExpr+` FROM core_banking.orders WHERE user_id = ? AND listing_id = ?`,
+			userID, listingID,
+		).Scan(&owned)
 		err = f.db.WithContext(ctx).Raw(`
 			SELECT id, quantity FROM core_banking.public_shares
 			WHERE user_id = ? AND listing_id = ?
@@ -470,8 +479,12 @@ func (f *fundsManager) ReducePublicSharesAfterSell(ctx context.Context, userID, 
 			FOR UPDATE
 		`, userID, listingID).Scan(&rows).Error
 	} else {
-		// Zaposleni/aktuar: zajednički (pooled) portfolio aktuara — isto kao
-		// agregacija u publishShares/getMyPortfolio.
+		// Zaposleni/aktuar: zajednički (pooled) posed i objavljeni redovi aktuara.
+		f.db.WithContext(ctx).Raw(
+			`SELECT `+netExpr+` FROM core_banking.orders
+			 WHERE listing_id = ? AND user_id IN (SELECT employee_id FROM core_banking.actuary_info)`,
+			listingID,
+		).Scan(&owned)
 		err = f.db.WithContext(ctx).Raw(`
 			SELECT id, quantity FROM core_banking.public_shares
 			WHERE listing_id = ?
@@ -481,10 +494,22 @@ func (f *fundsManager) ReducePublicSharesAfterSell(ctx context.Context, userID, 
 		`, listingID).Scan(&rows).Error
 	}
 	if err != nil {
-		return fmt.Errorf("čitanje public_shares za prodaju (user=%d listing=%d): %w", userID, listingID, err)
+		return fmt.Errorf("čitanje public_shares za clamp (user=%d listing=%d): %w", userID, listingID, err)
+	}
+	if owned < 0 {
+		owned = 0
 	}
 
-	remaining := soldQty
+	var total int64
+	for _, row := range rows {
+		total += row.Quantity
+	}
+	excess := total - owned
+	if excess <= 0 {
+		return nil // objavljeno već unutar poseda — ništa se ne dira
+	}
+
+	remaining := excess
 	for _, row := range rows {
 		if remaining <= 0 {
 			break

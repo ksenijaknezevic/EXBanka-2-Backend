@@ -777,16 +777,20 @@ func (e *Engine) executeOrder(ctx context.Context, order *trading.Order, effecti
 				if err := txFunds.CreditSellFill(ctx, current.AccountID, fillAmount); err != nil {
 					return err
 				}
-				// Shrink any OTC-published shares for this seller so the public
-				// listing never exceeds remaining holdings after the sale (FIFO,
-				// capped — never blocks the fill).
-				if err := txFunds.ReducePublicSharesAfterSell(ctx, current.UserID, current.ListingID, int64(chunkSize)); err != nil {
-					return err
-				}
 			}
 			if newRemaining == 0 {
-				_, err := txOrders.MarkDone(ctx, current.ID)
-				return err
+				if _, err := txOrders.MarkDone(ctx, current.ID); err != nil {
+					return err
+				}
+				// SELL fully settled → holdings dropped. Cap any OTC-published shares
+				// at remaining holdings — only the excess (owned < published) is
+				// removed, FIFO. Selling unpublished shares leaves the count alone.
+				if current.Direction == trading.OrderDirectionSell {
+					if err := txFunds.ClampPublicSharesToHoldings(ctx, current.UserID, current.ListingID); err != nil {
+						return err
+					}
+				}
+				return nil
 			}
 			_, err := txOrders.UpdateRemainingPortions(ctx, current.ID, newRemaining, false)
 			return err
