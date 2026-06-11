@@ -442,6 +442,77 @@ func (f *fundsManager) CreditSellFill(ctx context.Context, accountID int64, amou
 	})
 }
 
+// ReducePublicSharesAfterSell smanjuje prodavčeve OTC-objavljene akcije
+// (core_banking.public_shares) nakon SELL filla, tako da objavljena količina nikad ne
+// prelazi broj akcija koje korisnik i dalje poseduje. FIFO-umanjuje (najstariji redovi
+// prvi) za soldQty, ograničeno na trenutno objavljeno — prodaja većeg broja nego što je
+// objavljeno NIJE greška, samo isprazni objavljene redove. Opseg prati agregaciju u
+// portfoliju (portfolio_handler.getMyPortfolio): klijent dira samo svoje redove.
+//
+// Poziva se unutar SELL fill transakcije (trading/worker engine), pa su FOR UPDATE
+// zaključavanje i upisi atomični sa ostatkom filla.
+func (f *fundsManager) ReducePublicSharesAfterSell(ctx context.Context, userID, listingID, soldQty int64) error {
+	if soldQty <= 0 {
+		return nil
+	}
+
+	var rows []struct {
+		ID       int64 `gorm:"column:id"`
+		Quantity int64 `gorm:"column:quantity"`
+	}
+	var err error
+	if tradingworker.IsClientFromCtx(ctx) {
+		// Klijent: samo njegovi objavljeni redovi.
+		err = f.db.WithContext(ctx).Raw(`
+			SELECT id, quantity FROM core_banking.public_shares
+			WHERE user_id = ? AND listing_id = ?
+			ORDER BY created_at ASC, id ASC
+			FOR UPDATE
+		`, userID, listingID).Scan(&rows).Error
+	} else {
+		// Zaposleni/aktuar: zajednički (pooled) portfolio aktuara — isto kao
+		// agregacija u publishShares/getMyPortfolio.
+		err = f.db.WithContext(ctx).Raw(`
+			SELECT id, quantity FROM core_banking.public_shares
+			WHERE listing_id = ?
+			  AND user_id IN (SELECT employee_id FROM core_banking.actuary_info)
+			ORDER BY created_at ASC, id ASC
+			FOR UPDATE
+		`, listingID).Scan(&rows).Error
+	}
+	if err != nil {
+		return fmt.Errorf("čitanje public_shares za prodaju (user=%d listing=%d): %w", userID, listingID, err)
+	}
+
+	remaining := soldQty
+	for _, row := range rows {
+		if remaining <= 0 {
+			break
+		}
+		take := row.Quantity
+		if take > remaining {
+			take = remaining
+		}
+		newQty := row.Quantity - take
+		if newQty <= 0 {
+			// CHECK (quantity > 0): ispražnjen red mora da se obriše, ne postavi na 0.
+			if err := f.db.WithContext(ctx).Exec(
+				`DELETE FROM core_banking.public_shares WHERE id = ?`, row.ID,
+			).Error; err != nil {
+				return fmt.Errorf("brisanje public_shares reda %d: %w", row.ID, err)
+			}
+		} else {
+			if err := f.db.WithContext(ctx).Exec(
+				`UPDATE core_banking.public_shares SET quantity = ? WHERE id = ?`, newQty, row.ID,
+			).Error; err != nil {
+				return fmt.Errorf("ažuriranje public_shares reda %d: %w", row.ID, err)
+			}
+		}
+		remaining -= take
+	}
+	return nil
+}
+
 // HasSufficientFunds vraća true kada slobodna sredstva računa (stanje − rezervisano),
 // konvertovana u valutu računa, pokrivaju traženi USD iznos.
 // Isti princip kao margin_checker, ali eksponiran kroz FundsManager koji već

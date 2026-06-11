@@ -174,6 +174,9 @@ func (s *stubFundsManager) SettleBuyFill(ctx context.Context, accountID int64, a
 func (s *stubFundsManager) CreditSellFill(ctx context.Context, accountID int64, amount decimal.Decimal) error {
 	return nil
 }
+func (s *stubFundsManager) ReducePublicSharesAfterSell(ctx context.Context, userID, listingID, soldQty int64) error {
+	return nil
+}
 func (s *stubFundsManager) ChargeCommission(ctx context.Context, accountID int64, amount decimal.Decimal) error {
 	return nil
 }
@@ -741,6 +744,9 @@ func (s *stubFundsManagerWithControl) SettleBuyFill(ctx context.Context, account
 	return nil
 }
 func (s *stubFundsManagerWithControl) CreditSellFill(ctx context.Context, accountID int64, amount decimal.Decimal) error {
+	return nil
+}
+func (s *stubFundsManagerWithControl) ReducePublicSharesAfterSell(ctx context.Context, userID, listingID, soldQty int64) error {
 	return nil
 }
 func (s *stubFundsManagerWithControl) ChargeCommission(ctx context.Context, accountID int64, amount decimal.Decimal) error {

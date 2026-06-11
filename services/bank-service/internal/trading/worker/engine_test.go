@@ -97,6 +97,9 @@ func (s *stubFundsManagerEngine) SettleBuyFill(ctx context.Context, accountID in
 func (s *stubFundsManagerEngine) CreditSellFill(ctx context.Context, accountID int64, amount decimal.Decimal) error {
 	return nil
 }
+func (s *stubFundsManagerEngine) ReducePublicSharesAfterSell(ctx context.Context, userID, listingID, soldQty int64) error {
+	return nil
+}
 func (s *stubFundsManagerEngine) ChargeCommission(ctx context.Context, accountID int64, amount decimal.Decimal) error {
 	return nil
 }

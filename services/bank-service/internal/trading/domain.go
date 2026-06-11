@@ -342,7 +342,7 @@ type MarginChecker interface {
 //	BUY order APPROVED  → ReserveFunds  (stanje unchanged; rezervisana ↑)
 //	BUY fill executed   → SettleBuyFill (stanje ↓; rezervisana ↓ same amount)
 //	BUY order CANCELED  → ReleaseFunds  (stanje unchanged; rezervisana ↓)
-//	SELL fill executed  → CreditSellFill (stanje ↑)
+//	SELL fill executed  → CreditSellFill (stanje ↑) + ReducePublicSharesAfterSell (javne akcije ↓)
 type FundsManager interface {
 	// ReserveFunds increases rezervisana_sredstva by amount.
 	// Called when a BUY order transitions to APPROVED.
@@ -360,6 +360,13 @@ type FundsManager interface {
 	// CreditSellFill increases stanje_racuna by amount.
 	// Called per partial fill of a SELL order.
 	CreditSellFill(ctx context.Context, accountID int64, amount decimal.Decimal) error
+
+	// ReducePublicSharesAfterSell FIFO-shrinks the seller's OTC-published shares
+	// (core_banking.public_shares) by soldQty after a SELL fill, capped at what is
+	// currently published (selling more than published is not an error). Keeps the
+	// published amount from exceeding remaining holdings. Called per partial fill of
+	// a SELL order, inside the same fill transaction.
+	ReducePublicSharesAfterSell(ctx context.Context, userID, listingID, soldQty int64) error
 
 	// ChargeCommission decreases stanje_racuna by the commission amount without
 	// touching rezervisana_sredstva (commission was never part of the reservation).

@@ -777,6 +777,12 @@ func (e *Engine) executeOrder(ctx context.Context, order *trading.Order, effecti
 				if err := txFunds.CreditSellFill(ctx, current.AccountID, fillAmount); err != nil {
 					return err
 				}
+				// Shrink any OTC-published shares for this seller so the public
+				// listing never exceeds remaining holdings after the sale (FIFO,
+				// capped — never blocks the fill).
+				if err := txFunds.ReducePublicSharesAfterSell(ctx, current.UserID, current.ListingID, int64(chunkSize)); err != nil {
+					return err
+				}
 			}
 			if newRemaining == 0 {
 				_, err := txOrders.MarkDone(ctx, current.ID)

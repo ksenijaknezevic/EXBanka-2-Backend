@@ -468,7 +468,9 @@ func (h *PortfolioHandler) getMyPortfolio(w http.ResponseWriter, r *http.Request
 			available = 0
 		}
 
-		pub := pubMap[row.ListingID]
+		// public_shares is reduced on OTC settlement and (going forward) on each SELL
+		// fill, but stale rows can linger; never report more public than is held.
+		pub := clampPublicQuantity(pubMap[row.ListingID], row.NetShares)
 		lots := lotMap[lotKey{row.ListingID, row.AccountID}]
 		if lots == nil {
 			lots = []buyLotResponse{}
@@ -841,4 +843,13 @@ func (h *PortfolioHandler) verifyClaims(w http.ResponseWriter, r *http.Request) 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v) //nolint:errcheck
+}
+
+// clampPublicQuantity caps the publicly-published share count at the shares actually
+// held: a portfolio must never report more public (OTC) shares than it owns.
+func clampPublicQuantity(pub int, netShares int64) int {
+	if int64(pub) > netShares {
+		return int(netShares)
+	}
+	return pub
 }

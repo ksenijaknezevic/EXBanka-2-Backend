@@ -42,6 +42,9 @@ func (s *spyFundsManager) SettleBuyFill(ctx context.Context, accountID int64, am
 func (s *spyFundsManager) CreditSellFill(ctx context.Context, accountID int64, amount decimal.Decimal) error {
 	return nil
 }
+func (s *spyFundsManager) ReducePublicSharesAfterSell(ctx context.Context, userID, listingID, soldQty int64) error {
+	return nil
+}
 func (s *spyFundsManager) ChargeCommission(ctx context.Context, accountID int64, amount decimal.Decimal) error {
 	return nil
 }
