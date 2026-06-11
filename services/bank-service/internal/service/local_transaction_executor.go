@@ -417,6 +417,14 @@ func (e *LocalTransactionExecutor) Commit(ctx context.Context, ibTxID int64) err
 				dbTx.Raw(`SELECT id FROM core_banking.listing WHERE ticker = ?`, ticker).Scan(&listingID)
 				var accountID int64
 				dbTx.Raw(`SELECT id FROM core_banking.racun WHERE id_vlasnika = ? AND status = 'AKTIVAN' ORDER BY id LIMIT 1`, userID).Scan(&accountID)
+				if accountID == 0 && e.isActuary(ctx, dbTx, userID) {
+					// Aktuar nema lični račun → akcije se knjiže na bankin POSLOVNI
+					// račun (US akcije → USD), uz user_id=aktuar da se vide u portfoliju.
+					dbTx.Raw(`SELECT r.id FROM core_banking.racun r
+						JOIN core_banking.valuta v ON v.id = r.id_valute
+						WHERE r.vrsta_racuna = 'POSLOVNI' AND r.status = 'AKTIVAN'
+						ORDER BY (v.oznaka = 'USD') DESC, r.id ASC LIMIT 1`).Scan(&accountID)
+				}
 				if listingID > 0 && accountID > 0 {
 					if err := dbTx.Exec(`
 						INSERT INTO core_banking.orders
@@ -561,6 +569,7 @@ func (e *LocalTransactionExecutor) resolvePersonAccount(ctx context.Context, db 
 	if err != nil {
 		return acc, false
 	}
+	// 1) Klijent: lični račun korisnika (prednost: tačna valuta, pa RSD, pa prvi).
 	db.WithContext(ctx).Raw(`
 		SELECT r.broj_racuna, r.stanje_racuna, r.rezervisana_sredstva, v.oznaka AS valuta_oznaka
 		FROM core_banking.racun r
@@ -569,7 +578,36 @@ func (e *LocalTransactionExecutor) resolvePersonAccount(ctx context.Context, db 
 		ORDER BY (v.oznaka = ?) DESC, (v.oznaka = 'RSD') DESC, r.id ASC
 		LIMIT 1
 	`, uid, currency).Scan(&acc)
-	return acc, acc.BrojRacuna != ""
+	if acc.BrojRacuna != "" {
+		return acc, true
+	}
+
+	// 2) Aktuar/zaposleni nema lični račun → trguje preko bankinog POSLOVNI računa
+	//    (isto kao redovno aktuarsko trgovanje: user_id=aktuar, račun=POSLOVNI banke).
+	//    Bez ovoga interbank OTC (premija/strike/isporuka) pada za supervizora/agenta.
+	if e.isActuary(ctx, db, uid) {
+		db.WithContext(ctx).Raw(`
+			SELECT r.broj_racuna, r.stanje_racuna, r.rezervisana_sredstva, v.oznaka AS valuta_oznaka
+			FROM core_banking.racun r
+			JOIN core_banking.valuta v ON v.id = r.id_valute
+			WHERE r.vrsta_racuna = 'POSLOVNI' AND r.status = 'AKTIVAN'
+			ORDER BY (v.oznaka = ?) DESC, (v.oznaka = 'RSD') DESC, r.id ASC
+			LIMIT 1
+		`, currency).Scan(&acc)
+		return acc, acc.BrojRacuna != ""
+	}
+
+	return acc, false
+}
+
+// isActuary vraća true ako je korisnik aktuar (u actuary_info) — trguje u ime banke
+// i nema lični račun, pa za poravnanje koristi bankin POSLOVNI račun.
+func (e *LocalTransactionExecutor) isActuary(ctx context.Context, db *gorm.DB, uid int64) bool {
+	var exists bool
+	db.WithContext(ctx).Raw(
+		`SELECT EXISTS(SELECT 1 FROM core_banking.actuary_info WHERE employee_id = ?)`, uid,
+	).Scan(&exists)
+	return exists
 }
 
 // convertForSettlement konvertuje SIGNED iznos iz valute dogovora (fromCur) u

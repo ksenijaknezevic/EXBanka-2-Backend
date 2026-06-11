@@ -1392,3 +1392,83 @@ func TestCommit_OptionMonasPositive_CreditsSeller(t *testing.T) {
 	require.NoError(t, dbMock.ExpectationsWereMet())
 	repo.AssertCalled(t, "GetOptionContract", ctx, int64(111), "neg1")
 }
+
+// Aktuari/zaposleni nemaju lični račun — trguju preko bankinog POSLOVNI računa.
+// Kada se PERSON odnosi na aktuara bez ličnog računa, razrešavanje mora da padne
+// nazad na bankin POSLOVNI račun u traženoj valuti (inače ceo interbank OTC tok
+// — premija, strike, isporuka akcija — pada za supervizora/agenta).
+func TestResolvePersonAccount_ActuaryFallsBackToBusinessAccount(t *testing.T) {
+	db, mock := newGormDB(t)
+	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 265, "265")
+	ctx := context.Background()
+
+	cols := []string{"broj_racuna", "stanje_racuna", "rezervisana_sredstva", "valuta_oznaka"}
+	// 1) Aktuar nema lični račun (id_vlasnika lookup prazan).
+	mock.ExpectQuery("r.id_vlasnika").WillReturnRows(mock.NewRows(cols))
+	// 2) Jeste aktuar.
+	mock.ExpectQuery("actuary_info").WillReturnRows(mock.NewRows([]string{"exists"}).AddRow(true))
+	// 3) Bankin POSLOVNI USD račun.
+	mock.ExpectQuery("vrsta_racuna").WillReturnRows(
+		mock.NewRows(cols).AddRow("666000122200000008", "100000", "0", "USD"))
+
+	acc, found := e.resolvePersonAccount(ctx, db, "3", "USD")
+	if !found || acc.BrojRacuna != "666000122200000008" {
+		t.Fatalf("expected bank POSLOVNI account, got found=%v acc=%+v", found, acc)
+	}
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Klijent sa ličnim računom: ponašanje NEPROMENJENO (bez actuary_info/POSLOVNI upita).
+func TestResolvePersonAccount_ClientUsesOwnAccount(t *testing.T) {
+	db, mock := newGormDB(t)
+	e := NewLocalTransactionExecutor(db, &mockInterbankRepoForExecutor{}, 265, "265")
+	ctx := context.Background()
+
+	mock.ExpectQuery("r.id_vlasnika").WillReturnRows(
+		personAccountRows(mock, "666000121453782013", "5000", "0"))
+
+	acc, found := e.resolvePersonAccount(ctx, db, "4", "USD")
+	if !found || acc.BrojRacuna != "666000121453782013" {
+		t.Fatalf("expected client own account, got found=%v acc=%+v", found, acc)
+	}
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Kada aktuar (bez ličnog računa) kupi akcije kroz OTC exercise, sintetički DONE BUY
+// nalog mora da se kreira na bankin POSLOVNI račun (inače se akcije ne pojave u
+// portfoliju zaposlenog).
+func TestCommit_BuyerStock_ActuaryGetsSharesViaBusinessAccount(t *testing.T) {
+	db, dbMock := newGormDB(t)
+	repo := &mockInterbankRepoForExecutor{}
+	e := NewLocalTransactionExecutor(db, repo, 265, "265")
+	ctx := context.Background()
+
+	fid := "3" // aktuar (employee_id 3) — nema lični račun
+	tkr := "GOOG"
+	resv := domain.InterbankReservation{
+		InterbankTransactionID: 90,
+		AccountKind:            domain.AccountKindPerson,
+		AssetType:              domain.AssetTypeStock,
+		Amount:                 decimal.NewFromInt(6),
+		ForeignID:              &fid,
+		AssetTicker:            &tkr,
+	}
+	repo.On("ListReservationsByTx", ctx, int64(90)).Return([]domain.InterbankReservation{resv}, nil)
+	repo.On("UpdateTransactionStatus", ctx, int64(90), domain.TxStatusCommitted, "COMMITTED", "").Return(nil)
+
+	dbMock.ExpectBegin()
+	dbMock.ExpectQuery("FROM core_banking.listing WHERE ticker").
+		WillReturnRows(dbMock.NewRows([]string{"id"}).AddRow(int64(7)))
+	// Aktuar nema lični račun.
+	dbMock.ExpectQuery("id_vlasnika").WillReturnRows(dbMock.NewRows([]string{"id"}))
+	dbMock.ExpectQuery("actuary_info").WillReturnRows(dbMock.NewRows([]string{"exists"}).AddRow(true))
+	// Bankin POSLOVNI račun.
+	dbMock.ExpectQuery("vrsta_racuna").WillReturnRows(dbMock.NewRows([]string{"id"}).AddRow(int64(4)))
+	dbMock.ExpectExec("INSERT INTO core_banking.orders").WillReturnResult(sqlmock.NewResult(1, 1))
+	dbMock.ExpectCommit()
+
+	if err := e.Commit(ctx, 90); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	require.NoError(t, dbMock.ExpectationsWereMet())
+}
