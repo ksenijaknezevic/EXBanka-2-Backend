@@ -320,10 +320,14 @@ func (h *PortfolioHandler) getMyPortfolio(w http.ResponseWriter, r *http.Request
 	}
 	var pubRows []pubRow
 	if isEmployee {
-		// All public shares published by any employee (across all users).
+		// Only shares published by the actuary pool (the bank's portfolio) — NOT
+		// clients' published shares. Must match the net-holdings scope above, else a
+		// freshly bought lot shows as fully "public" (clamped to holdings) just because
+		// some client published the same ticker.
 		h.db.WithContext(ctx).Raw(`
 			SELECT listing_id, SUM(quantity) AS total
 			FROM core_banking.public_shares
+			WHERE user_id IN (SELECT employee_id FROM core_banking.actuary_info)
 			GROUP BY listing_id
 		`).Scan(&pubRows)
 	} else {
