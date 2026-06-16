@@ -717,20 +717,24 @@ func (r *otcRepository) ExpireStalePendingOffers(ctx context.Context, inactivity
 			return nil
 		}
 		txRepo := r.WithTx(tx)
-		statusStr := string(domain.OTCOfferExpired)
 		for _, m := range models {
 			if err := txRepo.UpdateOfferStatus(ctx, m.ID, domain.OTCOfferExpired, 0); err != nil {
 				return err
 			}
+			s := string(domain.OTCOfferExpired)
 			if err := txRepo.RecordOfferHistory(ctx, domain.OTCOfferHistoryEntry{
 				OfferID:   m.ID,
 				Action:    "EXPIRED",
 				ChangedBy: 0,
-				NewStatus: &statusStr,
+				NewStatus: &s,
 			}); err != nil {
 				return err
 			}
-			m.Status = statusStr
+			// Reflect the persisted state in the returned offer (status EXPIRED,
+			// modified_by=0 = sistem, last_modified=now) for accurate notification data.
+			m.Status = s
+			m.ModifiedBy = 0
+			m.LastModified = time.Now().UTC()
 			expired = append(expired, m.toDomain())
 		}
 		return nil
