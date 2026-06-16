@@ -13,6 +13,7 @@ import (
 	"banka-backend/services/bank-service/internal/domain"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ─── GORM modeli ──────────────────────────────────────────────────────────────
@@ -697,6 +698,47 @@ func (r *otcRepository) RecordOfferHistory(ctx context.Context, entry domain.OTC
 		NewStatus:         entry.NewStatus,
 	}
 	return r.db.WithContext(ctx).Create(&m).Error
+}
+
+// ExpireStalePendingOffers — vidi domain.OTCRepository. Jedna transakcija:
+// zaključa stale PENDING ponude FOR UPDATE, prebaci u EXPIRED (modified_by=0),
+// upiše EXPIRED korak u istoriju, vrati pogođene ponude.
+func (r *otcRepository) ExpireStalePendingOffers(ctx context.Context, inactivityCutoff time.Time) ([]domain.OTCOffer, error) {
+	var expired []domain.OTCOffer
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var models []otcOfferModel
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("status = ?", string(domain.OTCOfferPending)).
+			Where("(last_modified < ? OR settlement_date < CURRENT_DATE)", inactivityCutoff).
+			Find(&models).Error; err != nil {
+			return fmt.Errorf("select stale pending offers: %w", err)
+		}
+		if len(models) == 0 {
+			return nil
+		}
+		txRepo := r.WithTx(tx)
+		statusStr := string(domain.OTCOfferExpired)
+		for _, m := range models {
+			if err := txRepo.UpdateOfferStatus(ctx, m.ID, domain.OTCOfferExpired, 0); err != nil {
+				return err
+			}
+			if err := txRepo.RecordOfferHistory(ctx, domain.OTCOfferHistoryEntry{
+				OfferID:   m.ID,
+				Action:    "EXPIRED",
+				ChangedBy: 0,
+				NewStatus: &statusStr,
+			}); err != nil {
+				return err
+			}
+			m.Status = statusStr
+			expired = append(expired, m.toDomain())
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return expired, nil
 }
 
 func (r *otcRepository) ListCompletedNegotiations(ctx context.Context, filter domain.ListCompletedOffersFilter) ([]domain.NegotiationHistoryItem, error) {

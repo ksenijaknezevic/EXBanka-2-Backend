@@ -20,6 +20,7 @@ const (
 	OTCOfferAccepted    OTCOfferStatus = "ACCEPTED"    // prihvaćeno → ugovor kreiran
 	OTCOfferRejected    OTCOfferStatus = "REJECTED"    // odbijeno od druge strane
 	OTCOfferDeactivated OTCOfferStatus = "DEACTIVATED" // povučeno od strane koja je poslala / isteklo
+	OTCOfferExpired     OTCOfferStatus = "EXPIRED"     // automatski istekla (TTL neaktivnosti ili prošao settlement_date)
 )
 
 type OTCContractStatus string
@@ -355,6 +356,12 @@ type OTCRepository interface {
 
 	// ListCompletedNegotiations returns finished offers (status != PENDING) for a user with embedded history.
 	ListCompletedNegotiations(ctx context.Context, filter ListCompletedOffersFilter) ([]NegotiationHistoryItem, error)
+
+	// ExpireStalePendingOffers prebacuje PENDING ponude neaktivne duže od inactivityCutoff
+	// (last_modified < inactivityCutoff) ILI sa prošlim settlement_date u status EXPIRED.
+	// Za svaku upisuje EXPIRED red u istoriju (changed_by = 0 = sistem). Radi u jednoj
+	// transakciji; vraća pogođene ponude radi notifikacije.
+	ExpireStalePendingOffers(ctx context.Context, inactivityCutoff time.Time) ([]OTCOffer, error)
 
 	// WithTx vraća instancu repoa koja radi nad datom *gorm.DB transakcijom.
 	WithTx(tx interface{}) OTCRepository

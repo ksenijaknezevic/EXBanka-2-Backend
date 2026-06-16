@@ -132,6 +132,13 @@ func (m *mockOTCRepo) ListCompletedNegotiations(ctx context.Context, filter doma
 	}
 	return args.Get(0).([]domain.NegotiationHistoryItem), args.Error(1)
 }
+func (m *mockOTCRepo) ExpireStalePendingOffers(ctx context.Context, inactivityCutoff time.Time) ([]domain.OTCOffer, error) {
+	args := m.Called(ctx, inactivityCutoff)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.OTCOffer), args.Error(1)
+}
 
 // ─── Mock OTCPaymentPort ──────────────────────────────────────────────────────
 
