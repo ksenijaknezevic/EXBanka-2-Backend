@@ -103,6 +103,25 @@ func (n *DBOTCNotifier) NotifyContractExpiringSoon(contract domain.OTCContractEx
 	}
 }
 
+func (n *DBOTCNotifier) NotifyOfferExpired(offer domain.OTCOffer) {
+	title := "OTC ponuda istekla"
+	body := fmt.Sprintf("Akcija %d • %d kom × %.2f USD — ponuda je istekla zbog neaktivnosti.",
+		offer.ListingID, offer.Amount, offer.PricePerStock)
+	data := map[string]string{
+		"offer_id":   strconv.FormatInt(offer.ID, 10),
+		"listing_id": strconv.FormatInt(offer.ListingID, 10),
+		"amount":     strconv.Itoa(int(offer.Amount)),
+	}
+	for _, recipientID := range []int64{offer.BuyerID, offer.SellerID} {
+		if recipientID == 0 {
+			continue
+		}
+		if _, err := n.dispatcher.Notify(context.Background(), recipientID, "OTC_EXPIRED", title, body, data); err != nil {
+			log.Printf("[otc-db-notif] expired inbox failed user=%d: %v", recipientID, err)
+		}
+	}
+}
+
 // CompositeOTCNotifier kombinuje više OTCNotifier-a (npr. AMQP + DB) tako da
 // svaki događaj putuje kroz oba kanala.
 type CompositeOTCNotifier struct {
@@ -141,5 +160,11 @@ func (c *CompositeOTCNotifier) NotifyOfferDeclined(offer domain.OTCOffer, caller
 func (c *CompositeOTCNotifier) NotifyContractExpiringSoon(contract domain.OTCContractExpiringSoon, daysLeft int) {
 	for _, d := range c.delegates {
 		d.NotifyContractExpiringSoon(contract, daysLeft)
+	}
+}
+
+func (c *CompositeOTCNotifier) NotifyOfferExpired(offer domain.OTCOffer) {
+	for _, d := range c.delegates {
+		d.NotifyOfferExpired(offer)
 	}
 }

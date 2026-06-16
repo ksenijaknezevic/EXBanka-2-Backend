@@ -92,6 +92,9 @@ var otcOfferDeclinedTmpl string
 //go:embed templates/otc_contract_expiring.html
 var otcContractExpiringTmpl string
 
+//go:embed templates/otc_offer_expired.html
+var otcOfferExpiredTmpl string
+
 // emailTmplEntry holds a pre-parsed template and its email subject line.
 type emailTmplEntry struct {
 	subject string
@@ -143,6 +146,7 @@ func NewEmailService(cfg *config.Config, sender smtp.Sender) *EmailService {
 			"OTC_OFFER_ACCEPTED":      {subject: "EXBanka2 \u2014 OTC ponuda prihva\u0107ena", tmpl: must("otc_offer_accepted", otcOfferAcceptedTmpl)},
 			"OTC_OFFER_DECLINED":      {subject: "EXBanka2 \u2014 OTC ponuda odbijena", tmpl: must("otc_offer_declined", otcOfferDeclinedTmpl)},
 			"OTC_CONTRACT_EXPIRING":   {subject: "EXBanka2 \u2014 OTC ugovor uskoro isti\u010de", tmpl: must("otc_contract_expiring", otcContractExpiringTmpl)},
+			"OTC_OFFER_EXPIRED":       {subject: "EXBanka2 \u2014 OTC ponuda istekla", tmpl: must("otc_offer_expired", otcOfferExpiredTmpl)},
 		},
 	}
 }

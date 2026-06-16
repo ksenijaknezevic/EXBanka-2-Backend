@@ -21,6 +21,7 @@ type OTCNotifier interface {
 	NotifyOfferAccepted(offer domain.OTCOffer, contract domain.OTCContract)
 	NotifyOfferDeclined(offer domain.OTCOffer, callerID int64)
 	NotifyContractExpiringSoon(contract domain.OTCContractExpiringSoon, daysLeft int)
+	NotifyOfferExpired(offer domain.OTCOffer)
 }
 
 // AMQPOTCNotifier publishes OTC email events to the email_notifications queue.
@@ -135,6 +136,24 @@ func (n *AMQPOTCNotifier) NotifyContractExpiringSoon(contract domain.OTCContract
 	}
 }
 
+// NotifyOfferExpired notifies both parties that a PENDING offer expired (TTL/inactivity).
+func (n *AMQPOTCNotifier) NotifyOfferExpired(offer domain.OTCOffer) {
+	data := map[string]string{
+		"offer_id":        strconv.FormatInt(offer.ID, 10),
+		"listing_id":      strconv.FormatInt(offer.ListingID, 10),
+		"amount":          strconv.Itoa(int(offer.Amount)),
+		"price_per_stock": fmt.Sprintf("%.2f", offer.PricePerStock),
+		"settlement_date": offer.SettlementDate.Format("2006-01-02"),
+	}
+	for _, recipientID := range []int64{offer.BuyerID, offer.SellerID} {
+		e := n.email(recipientID)
+		if e == "" {
+			continue
+		}
+		n.publish(otcEmailEvent{Type: "OTC_OFFER_EXPIRED", Email: e, Data: data})
+	}
+}
+
 type otcEmailEvent struct {
 	Type  string            `json:"type"`
 	Email string            `json:"email"`
@@ -193,4 +212,7 @@ func (n *NoOpOTCNotifier) NotifyOfferDeclined(offer domain.OTCOffer, callerID in
 }
 func (n *NoOpOTCNotifier) NotifyContractExpiringSoon(contract domain.OTCContractExpiringSoon, daysLeft int) {
 	log.Printf("[otc-notif] noop OTC_CONTRACT_EXPIRING contract_id=%d days=%d", contract.ID, daysLeft)
+}
+func (n *NoOpOTCNotifier) NotifyOfferExpired(offer domain.OTCOffer) {
+	log.Printf("[otc-notif] noop OTC_OFFER_EXPIRED offer_id=%d", offer.ID)
 }
