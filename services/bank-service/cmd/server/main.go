@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -579,6 +580,16 @@ func main() {
 	// ── 7e3. Daily scan: VALID OTC contracts past settlement_date → EXPIRED ───
 	otcContractExpiryWorker := worker.NewOTCContractExpiryWorker(otcRepo, otcNotifier)
 	go otcContractExpiryWorker.Start(ctx)
+
+	// ── 7e3b. Daily scan: stale PENDING OTC ponude → EXPIRED (TTL neaktivnosti). ──
+	otcOfferTTLDays := 7
+	if v := os.Getenv("OTC_OFFER_TTL_DAYS"); v != "" {
+		if d, err := strconv.Atoi(v); err == nil && d > 0 {
+			otcOfferTTLDays = d
+		}
+	}
+	otcOfferExpiryWorker := worker.NewOTCOfferExpiryWorker(otcRepo, otcNotifier, time.Duration(otcOfferTTLDays)*24*time.Hour)
+	go otcOfferExpiryWorker.Start(ctx)
 
 	// ── 7e4. Daily scan: ACTIVE inter-bank opcije past settlementDate → EXPIRED.
 	// Kad smo MI prodavac, vraćamo prodavčeve blokirane akcije (premija ostaje). §S10
